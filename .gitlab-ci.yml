@@ -1,0 +1,48 @@
+# ── Forest for the Trees — GitLab CI ─────────────────────────────────────────
+# Controls when changes mirror to GitHub.
+#
+# Branch model:
+#   main    → GitLab only (your working branch, never auto-mirrors)
+#   beta    → auto-mirrors to GitHub 'beta' branch on every merge
+#   stable  → mirrors to GitHub 'main' branch, requires manual approval
+#
+# Required GitLab CI/CD variables (Settings → CI/CD → Variables):
+#   GITHUB_TOKEN   — GitHub personal access token (repo scope)
+#   GITHUB_REPO    — e.g. dyndl/forest-for-the-trees
+
+stages:
+  - mirror
+
+# ── Shared mirror script ──────────────────────────────────────────────────────
+.mirror_base:
+  stage: mirror
+  image: alpine/git:latest
+  before_script:
+    - git config --global user.email "ci@forestforthetrees.app"
+    - git config --global user.name "Forest CI"
+    # Authenticate with GitHub token
+    - git remote add github https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git || true
+
+# ── Beta mirror — auto on every push to beta branch ──────────────────────────
+mirror_beta:
+  extends: .mirror_base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "beta"'
+  script:
+    - echo "Mirroring beta → GitHub beta branch..."
+    - git push github HEAD:refs/heads/beta --force
+    - echo "✓ GitHub beta updated (commit $CI_COMMIT_SHORT_SHA)"
+
+# ── Stable mirror — manual trigger only, pushes to GitHub main ───────────────
+mirror_stable:
+  extends: .mirror_base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "stable"'
+      when: manual   # ← requires a human to click "Run" in GitLab CI UI
+  script:
+    - echo "Mirroring stable → GitHub main branch..."
+    - git push github HEAD:refs/heads/main --force
+    - echo "✓ GitHub main updated — public stable release (commit $CI_COMMIT_SHORT_SHA)"
+  environment:
+    name: github-stable
+    url: https://github.com/${GITHUB_REPO}
