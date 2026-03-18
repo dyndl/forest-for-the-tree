@@ -175,6 +175,38 @@ For the Relationship Pulse agent to track overdue touchpoints:
 Thresholds: **close** = 7 days, **friend** = 14 days, **acquaintance** = 30 days.
 The COO ignores untagged contacts entirely.
 
+
+---
+
+## Personal context persistence
+
+Your personal context (goals, life areas, outline, preferences) is stored in two places:
+
+| Location | What it is | Survives upgrades? |
+|---|---|---|
+| **Supabase `user_context`** | Live source of truth for the running app | ✅ Yes — outside the repo |
+| **`forest-context.md` in cloud storage** | Human-readable backup, editable by hand | ✅ Yes — outside the repo |
+
+### Editing your context manually
+
+**Google tier:** Open Google Drive → `Forest for the Trees` folder → `forest-context.md`. Edit it directly — the COO reads it on every morning run.
+
+**Microsoft tier:** Open OneDrive → `Forest for the Trees` folder → `forest-context.md`. Same thing.
+
+**Zero tier:** Copy `user-context/my-context.example.md` to `user-context/my-context.md` and fill it in. This file is gitignored and stays local.
+
+### Pulling upstream updates (upgrading your fork)
+
+```bash
+git fetch upstream
+git merge upstream/main
+git push
+# Vercel auto-redeploys — your Supabase data and cloud file are untouched
+```
+
+No data migration needed for most updates. If a new release adds database columns, the release notes will include the SQL to run in Supabase SQL Editor.
+
+---
 ---
 
 ## Troubleshooting

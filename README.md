@@ -33,6 +33,39 @@ Each morning it reads your Google Calendar and Gmail, builds a time-blocked sche
 
 ---
 
+## Integration tiers
+
+Choose your tier during onboarding. You can change it later in Settings.
+
+| Tier | What you get | Context storage |
+|---|---|---|
+| **Zero** | Local task management, manual scheduling | `user-context/my-context.md` (gitignored) |
+| **Google** *(recommended)* | Calendar, Gmail, Tasks, Contacts, Drive | `forest-context.md` in Google Drive |
+| **Microsoft** | Outlook, Teams, OneDrive | `forest-context.md` in OneDrive |
+
+### Optional add-ons
+
+| Add-on | What it does | Cost |
+|---|---|---|
+| Oura Ring | Readiness + sleep scores shape daily cognitive load | Free w/ Oura membership |
+| Voice memos | Transcribe audio via OpenAI Whisper | ~$0.006/min |
+
+---
+
+## Personal context + upgrades
+
+Your context (goals, life areas, outline, preferences) lives in Supabase and syncs to a `forest-context.md` file in your cloud storage — completely outside the git repo.
+
+To upgrade your fork:
+```bash
+git fetch upstream && git merge upstream/main && git push
+```
+
+Your data is untouched. Edit `forest-context.md` directly in Google Drive or OneDrive to update your context between sessions.
+
+
+---
+
 ## Setup
 
 See **[SETUP.md](./SETUP.md)** for the full walkthrough (~45 min end-to-end).

@@ -25,3 +25,8 @@ Thumbs.db
 
 # Vercel
 .vercel
+
+# Personal context — never commit your filled-in context file
+user-context/my-context.md
+# But DO commit the example template:
+!user-context/my-context.example.md

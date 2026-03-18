@@ -37,6 +37,7 @@ Thanks for your interest in contributing! This is a small open project — contr
 ## Ground rules
 
 - **No personal data in code.** All defaults must be empty strings, empty arrays, or generic placeholders. Never hardcode names, goals, API keys, or personal preferences.
+- **Never commit `user-context/my-context.md`.** This file is gitignored for good reason — it contains personal information. Only `user-context/my-context.example.md` belongs in the repo.
 - **Keep the COO persona neutral.** The system prompts should work for any user's life — not assume a specific job, lifestyle, or goal type.
 - **Feature flags over breaking changes.** New optional features should be off by default (like ADHD-aware mode).
 - **One PR per concern.** Keep changes focused — a UI fix and a new API route shouldn't be in the same PR.
@@ -75,3 +76,24 @@ refactor/short-description
 ## Questions
 
 Open an issue with the `question` label — happy to help.
+
+---
+
+## Personal context and upgrades
+
+When you fork this repo and deploy your own instance, your personal context lives in two places:
+
+1. **Supabase** — the `user_context` table (source of truth for the running app)
+2. **Your cloud storage** — `Forest for the Trees/forest-context.md` in Google Drive or OneDrive (auto-synced)
+
+When pulling upstream changes from this repo:
+```bash
+git fetch upstream
+git merge upstream/main
+```
+
+Neither location is affected — your Supabase data and cloud file are completely outside the git repo. You can upgrade freely without losing any personal context.
+
+If you want to **hand-edit** your context (e.g. to update your roadmap or outline before the next COO run), edit `Forest for the Trees/forest-context.md` directly in Google Drive / OneDrive. The app reads it on every COO morning run.
+
+For the **zero-integration tier**, copy `user-context/my-context.example.md` to `user-context/my-context.md` and fill it in locally.

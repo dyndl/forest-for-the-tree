@@ -1,4 +1,6 @@
 import { getServerSession } from 'next-auth'
+import { writeContextFile } from '@/lib/context-storage'
+import { getFeatureFlags } from '@/lib/integrations'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase'
 
@@ -59,6 +61,19 @@ export async function POST(req) {
     .single()
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  // Write context file to cloud storage (non-blocking — don't fail the request)
+  try {
+    const flags = getFeatureFlags(data.integration_tier, data.addons)
+    const tokenRow = await supabaseAdmin
+      .from('user_tokens').select('access_token').eq('user_id', userId).single()
+      .then(r => r.data)
+    if (tokenRow?.access_token) {
+      writeContextFile(flags.contextStorage, tokenRow.access_token, data)
+        .catch(() => {}) // fire-and-forget
+    }
+  } catch { /* non-fatal */ }
+
   return Response.json({ settings: data })
 }
 
