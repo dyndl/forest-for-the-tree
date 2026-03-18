@@ -3,17 +3,17 @@ import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase'
 
 const DEFAULTS = {
-  roadmap: 'Land a Data Science (ML) role within 4 weeks',
-  peak_hours: '8-10am, 2-4pm',
+  roadmap: '',
+  peak_hours: '9-11am, 3-5pm',
   energy_default: 'medium',
+  adhd_aware: false,
   adhd_patterns: [],
   known_blockers: [],
   financial_goals: [],
   relationship_tiers: {},
-  weekly_time_budget: {
-    career: 300, interview: 240, learning: 180,
-    fitness: 90, family: 60, admin: 45, finance: 30,
-  },
+  // life_areas is a user-defined array: [{ key, label, emoji, blocks }]
+  life_areas: [],
+  weekly_time_budget: {},
   coo_notes: '',
   notification_prefs: {
     morning_brief: true,
