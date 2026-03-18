@@ -47,8 +47,24 @@ export async function POST(req) {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { agentId, silent } = await req.json()
+  const body = await req.json()
   const userId = session.user.email
+
+  // ── Bulk create from onboarding ─────────────────────────────────────────────
+  if (body.agents && Array.isArray(body.agents)) {
+    const { agents, replace_defaults } = body
+    if (replace_defaults) {
+      // Remove any existing default/seeded agents before inserting onboarding ones
+      await supabaseAdmin.from('agents').delete().eq('user_id', userId)
+    }
+    const rows = agents.map(a => ({ ...a, user_id: userId }))
+    const { error } = await supabaseAdmin.from('agents').insert(rows)
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ ok: true, count: rows.length })
+  }
+
+  // ── Run a single agent ───────────────────────────────────────────────────────
+  const { agentId, silent } = body
 
   const { data: agentRow } = await supabaseAdmin.from('agents').select('*').eq('id', agentId).eq('user_id', userId).single()
   if (!agentRow) return Response.json({ error: 'Agent not found' }, { status: 404 })

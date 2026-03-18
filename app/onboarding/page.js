@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const STEPS = ['welcome', 'roadmap', 'areas', 'schedule', 'oura', 'relationships', 'done']
+const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'relationships', 'done']
 
 // ── Suggested life area starting points (user can edit/remove/add freely) ────
 const AREA_SUGGESTIONS = [
@@ -20,6 +20,37 @@ const ADHD_PATTERNS = [
   'avoidance', 'context-switching', 'underestimating-time',
   'hyperfocus', 'task-initiation', 'decision-fatigue', 'perfectionism',
 ]
+
+const INTEGRATION_TIERS = [
+  {
+    id: 'zero',
+    label: 'Zero integrations',
+    icon: '🖥️',
+    desc: 'Local only — no external accounts needed. Context saved to a local file.',
+    features: ['Local task management', 'Manual schedule building', 'File-based context'],
+  },
+  {
+    id: 'google',
+    label: 'Google',
+    icon: '🔵',
+    desc: 'Google Calendar, Gmail, Tasks, Contacts, and Drive.',
+    features: ['Auto schedule from Calendar', 'Gmail scanning', 'Google Tasks sync', 'Drive context storage'],
+    recommended: true,
+  },
+  {
+    id: 'microsoft',
+    label: 'Microsoft',
+    icon: '🟦',
+    desc: 'Outlook Calendar, Teams, and OneDrive.',
+    features: ['Auto schedule from Outlook', 'Teams notifications', 'OneDrive context storage'],
+  },
+]
+
+const ADDON_OPTIONS = [
+  { id: 'oura',   label: 'Oura Ring',      icon: '💍', cost: 'Free w/ Oura membership', desc: 'Readiness + sleep scores shape your daily cognitive load.' },
+  { id: 'whisper', label: 'Voice memos',   icon: '🎙️', cost: '~$0.006/min',             desc: 'Transcribe voice notes via OpenAI Whisper.' },
+]
+
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const glassCard = {
@@ -119,37 +150,79 @@ function ProgressDots({ step }) {
   )
 }
 
-// ══ STEP 1: WELCOME ═══════════════════════════════════════════════════════════
-function WelcomeStep({ onNext }) {
+// ══ STEP 1: WELCOME + INTEGRATION TIER ════════════════════════════════════════
+function WelcomeStep({ data, onChange, onNext }) {
+  const tier = data.integration_tier || 'google'
+  const addons = data.addons || []
+  const toggleAddon = (id) =>
+    onChange('addons', addons.includes(id) ? addons.filter(a => a !== id) : [...addons, id])
+
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 36, marginBottom: 8 }}>🌲</div>
-      <h1 style={{ ...serif, fontSize: 26, color: '#182e22', marginBottom: 6, fontStyle: 'italic' }}>
-        Forest for the Trees
-      </h1>
-      <p style={{ ...mono, fontSize: 9, color: '#7aaa8a', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 20 }}>
-        Your autonomous life COO
-      </p>
-      <p style={{ fontSize: 13, color: '#3a5c47', lineHeight: 1.7, marginBottom: 20 }}>
-        Each morning your COO reads your Calendar and Gmail, builds your day in 15-min blocks, and checks in throughout — so you can focus on the work, not the managing.
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-        {[
-          ['📅', 'Reads your Calendar + Gmail daily'],
-          ['🧠', 'Builds time-blocked schedules around your peak hours'],
-          ['💍', 'Integrates Oura Ring readiness (optional)'],
-          ['🔔', 'Notifies you via Google Calendar'],
-          ['🤝', 'Tracks relationships + birthdays automatically'],
-        ].map(([icon, text]) => (
-          <div key={text} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 12px', background: 'rgba(45,122,82,0.06)',
-            borderRadius: 8, fontSize: 12, color: '#3a5c47', textAlign: 'left',
-          }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>{text}
-          </div>
-        ))}
+    <div>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🌲</div>
+        <h1 style={{ ...serif, fontSize: 26, color: '#182e22', marginBottom: 6, fontStyle: 'italic' }}>
+          Forest for the Trees
+        </h1>
+        <p style={{ ...mono, fontSize: 9, color: '#7aaa8a', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          Your autonomous life COO
+        </p>
       </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={label9}>Choose your integration tier</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+          {INTEGRATION_TIERS.map(t => (
+            <button key={t.id} onClick={() => onChange('integration_tier', t.id)} style={{
+              textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+              border: `1.5px solid ${tier === t.id ? '#1a5a3c' : 'rgba(122,170,138,0.25)'}`,
+              background: tier === t.id ? 'rgba(26,90,60,0.07)' : 'transparent',
+              transition: 'all .15s',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
+                  {t.label}
+                </span>
+                {t.recommended && (
+                  <span style={{ ...mono, fontSize: 8, color: '#1a5a3c', background: 'rgba(26,90,60,0.1)', padding: '2px 6px', borderRadius: 4 }}>
+                    RECOMMENDED
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: '#7aaa8a', margin: 0, lineHeight: 1.5, fontFamily: 'Figtree, sans-serif' }}>
+                {t.desc}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label style={label9}>Optional add-ons</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+          {ADDON_OPTIONS.map(a => (
+            <button key={a.id} onClick={() => toggleAddon(a.id)} style={{
+              textAlign: 'left', padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
+              border: `1.5px solid ${addons.includes(a.id) ? '#0f6e56' : 'rgba(122,170,138,0.2)'}`,
+              background: addons.includes(a.id) ? 'rgba(15,110,86,0.06)' : 'transparent',
+              transition: 'all .15s',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 15 }}>{a.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
+                  {a.label}
+                </span>
+                <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', marginLeft: 'auto' }}>{a.cost}</span>
+              </div>
+              <p style={{ fontSize: 11, color: '#7aaa8a', margin: '3px 0 0 23px', lineHeight: 1.4, fontFamily: 'Figtree, sans-serif' }}>
+                {a.desc}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <button style={btnPrimary} onClick={onNext}>Get started →</button>
     </div>
   )
@@ -323,7 +396,174 @@ function AreasStep({ data, onChange, onNext, onBack }) {
   )
 }
 
-// ══ STEP 4: SCHEDULE & PATTERNS ════════════════════════════════════════════════
+
+// ══ STEP 4: OUTLINE — write or upload ══════════════════════════════════════════
+function OutlineStep({ data, onChange, onNext, onBack }) {
+  const [uploading, setUploading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState('')
+  const [previewAgents, setPreviewAgents] = useState(null)
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setError('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/onboarding/extract-outline', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error || 'Upload failed'); return }
+      onChange('outline', json.text)
+    } catch { setError('Upload failed — check your connection') }
+    finally { setUploading(false) }
+  }
+
+  async function generatePreview() {
+    if (!data.outline?.trim()) { setError('Add some context first'); return }
+    setGenerating(true); setError('')
+    try {
+      const res = await fetch('/api/onboarding/generate-agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outline: data.outline,
+          life_areas: data.life_areas || [],
+          roadmap: data.roadmap || '',
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error || 'Generation failed'); return }
+      setPreviewAgents(json.agents)
+      onChange('pending_agents', json.agents)
+    } catch { setError('Generation failed — check your connection') }
+    finally { setGenerating(false) }
+  }
+
+  if (previewAgents) {
+    return (
+      <AgentPreview
+        agents={previewAgents}
+        onEdit={setPreviewAgents}
+        onConfirm={(agents) => { onChange('pending_agents', agents); onNext() }}
+        onBack={() => setPreviewAgents(null)}
+      />
+    )
+  }
+
+  return (
+    <div>
+      <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic' }}>
+        Tell the COO about your life
+      </h2>
+      <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6 }}>
+        Write a free-form outline or drop a file. The more context you give, the more personalised your agents will be. You can include goals, patterns, constraints, projects — anything relevant.
+      </p>
+
+      <div style={{ marginBottom: 10 }}>
+        <label style={label9}>Your context</label>
+        <textarea
+          style={{ ...inputStyle, resize: 'vertical', minHeight: 140 }}
+          rows={7}
+          value={data.outline || ''}
+          onChange={e => onChange('outline', e.target.value)}
+          placeholder={`e.g.
+
+I'm building a SaaS product while freelancing part-time. My biggest challenge is context-switching between client work and my own product. I work best in the mornings. I tend to over-engineer things and delay shipping.
+
+I want to get to 10 paying customers in 4 weeks. I also want to run 3x a week and not let fitness slide during crunch periods...`}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <label style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 6, padding: '8px 0', borderRadius: 8, cursor: 'pointer',
+          border: '1px dashed rgba(122,170,138,0.4)', fontSize: 12, color: '#7aaa8a',
+          fontFamily: 'Figtree, sans-serif', background: 'rgba(45,122,82,0.03)',
+        }}>
+          {uploading ? 'Extracting…' : '📄 Drop or upload .txt / .md / .pdf'}
+          <input type="file" accept=".txt,.md,.pdf" style={{ display: 'none' }} onChange={handleFile} disabled={uploading} />
+        </label>
+      </div>
+
+      {error && (
+        <div style={{ fontSize: 11, color: '#8a2828', marginBottom: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      <button
+        style={{ ...btnPrimary, opacity: (!data.outline?.trim() || generating) ? 0.5 : 1 }}
+        onClick={generatePreview}
+        disabled={!data.outline?.trim() || generating}
+      >
+        {generating ? 'Generating your agents…' : 'Preview my agents →'}
+      </button>
+      <button style={btnGhost} onClick={onNext}>Skip — I'll set up agents later</button>
+      <button style={btnGhost} onClick={onBack}>Back</button>
+    </div>
+  )
+}
+
+// ── Agent preview sub-component ───────────────────────────────────────────────
+function AgentPreview({ agents, onEdit, onConfirm, onBack }) {
+  function remove(id) { onEdit(agents.filter(a => a.id !== id)) }
+
+  return (
+    <div>
+      <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic' }}>
+        Your agents
+      </h2>
+      <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 14, lineHeight: 1.6 }}>
+        Generated from your outline. Remove any that don't fit — you can add more later.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {agents.map(a => (
+          <div key={a.id} style={{
+            padding: '10px 12px', background: 'rgba(45,122,82,0.05)',
+            border: '1px solid rgba(122,170,138,0.2)', borderRadius: 10,
+            position: 'relative',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 18 }}>{a.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
+                {a.name}
+              </span>
+              <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', marginLeft: 2 }}>{a.area}</span>
+              <button onClick={() => remove(a.id)} style={{
+                marginLeft: 'auto', border: 'none', background: 'transparent',
+                color: 'rgba(122,170,138,0.5)', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1,
+              }}>×</button>
+            </div>
+            <p style={{ fontSize: 11, color: '#5a7a68', lineHeight: 1.5, margin: '0 0 4px 0', fontFamily: 'Figtree, sans-serif' }}>
+              {a.prompt}
+            </p>
+            {a.rationale && (
+              <p style={{ ...mono, fontSize: 9, color: '#7aaa8a', margin: 0, lineHeight: 1.4 }}>
+                ↳ {a.rationale}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {agents.length === 0 && (
+        <p style={{ fontSize: 12, color: '#b0c4b8', textAlign: 'center', marginBottom: 12 }}>
+          All agents removed — you can add custom ones later.
+        </p>
+      )}
+
+      <button style={btnPrimary} onClick={() => onConfirm(agents)}>
+        Confirm {agents.length > 0 ? `${agents.length} agent${agents.length > 1 ? 's' : ''}` : 'and continue'} →
+      </button>
+      <button style={btnGhost} onClick={onBack}>← Revise outline</button>
+    </div>
+  )
+}
+
+// ══ STEP 5: SCHEDULE & PATTERNS ════════════════════════════════════════════════
 function ScheduleStep({ data, onChange, onNext, onBack }) {
   const toggle = (p) => {
     const current = data.adhd_patterns || []
@@ -592,11 +832,13 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false)
 
   const [formData, setFormData] = useState({
-    roadmap:    '',
-    peak_hours: '9-11am, 3-5pm',
-    adhd_aware: false,
-    adhd_patterns: [],
-    coo_notes: '',
+    integration_tier: 'google',
+    addons:           [],
+    roadmap:          '',
+    peak_hours:       '9-11am, 3-5pm',
+    adhd_aware:       false,
+    adhd_patterns:    [],
+    coo_notes:        '',
     notification_prefs: {
       morning_brief:     true,
       midday_checkin:    true,
@@ -605,7 +847,9 @@ export default function OnboardingPage() {
       urgent_alerts:     true,
       birthday_alerts:   true,
     },
-    life_areas: [],
+    life_areas:     [],
+    outline:        '',
+    pending_agents: [],
   })
 
   const set  = (key, val) => setFormData(f => ({ ...f, [key]: val }))
@@ -614,26 +858,37 @@ export default function OnboardingPage() {
 
   async function finish() {
     setSaving(true)
-    // Derive weekly_time_budget from life_areas (blocks × 15 = minutes)
     const weekly_time_budget = Object.fromEntries(
       formData.life_areas.map(a => [a.key, a.blocks * 15])
     )
     try {
+      // Save settings
       await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          integration_tier:   formData.integration_tier,
+          addons:             formData.addons,
           roadmap:            formData.roadmap,
           peak_hours:         formData.peak_hours,
           adhd_aware:         formData.adhd_aware,
           adhd_patterns:      formData.adhd_patterns,
           coo_notes:          formData.coo_notes,
+          outline:            formData.outline,
           notification_prefs: formData.notification_prefs,
           life_areas:         formData.life_areas,
           weekly_time_budget,
           onboarding_complete: true,
         }),
       })
+      // Save generated agents (if any confirmed)
+      if (formData.pending_agents?.length > 0) {
+        await fetch('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agents: formData.pending_agents, replace_defaults: true }),
+        })
+      }
     } finally {
       router.push('/')
     }
@@ -646,9 +901,10 @@ export default function OnboardingPage() {
       <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: 16, overflowY: 'auto' }}>
         <div style={glassCard}>
           {step !== 'welcome' && step !== 'done' && <ProgressDots step={step} />}
-          {step === 'welcome'       && <WelcomeStep onNext={next} />}
+          {step === 'welcome'       && <WelcomeStep data={formData} onChange={set} onNext={next} />}
           {step === 'roadmap'       && <RoadmapStep       data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'areas'         && <AreasStep         data={formData} onChange={set} onNext={next} onBack={back} />}
+          {step === 'outline'       && <OutlineStep      data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'schedule'      && <ScheduleStep      data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} />}
           {step === 'relationships' && <RelationshipsStep onNext={next} onBack={back} />}
