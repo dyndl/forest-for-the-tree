@@ -5,14 +5,28 @@ import { runAgentBrief } from '@/lib/coo'
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 
+// Default agents are intentionally generic — users customise these during setup
+// or create their own via the Agents tab (+ button).
+// To add starter agents that match your life areas, edit this array.
 const DEFAULT_AGENTS = [
-  { id: 'a1', name: 'Career COO', icon: '🎯', area: 'career', score: 82, runs: 0, streak: 0, prompt: 'You are my ADHD-aware career COO. Goal: land an ML-heavy Data Science role in 4 weeks. Give prioritized, time-blocked daily actions in 15-min increments. Flag procrastination patterns. Be direct and warm.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a2', name: 'Interview Coach', icon: '🧠', area: 'interview', score: 91, runs: 0, streak: 0, prompt: 'You are my senior DS/ML interview coach. Focus: XGBoost for time-series vs classification, fraud detection, Python algorithms (LeetCode easy/medium). Drill plans, explain-to-interviewer templates, fintech ML pitfalls.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a3', name: 'Fitness Pacer', icon: '⚡', area: 'fitness', score: 67, runs: 0, streak: 0, prompt: 'You are my fitness coach. Suggest one micro-workout per day in a 15-min block — ADHD-friendly, varied, quick wins. Track streaks. Motivate without guilt.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a4', name: 'Relationship Pulse', icon: '🤝', area: 'family', score: 74, runs: 0, streak: 0, prompt: 'You are my relationship steward. Suggest one meaningful touchpoint per day — text, call, or shared activity — under 20 min. Flag if I have gone 2+ days without social contact.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a5', name: 'Finance Tracker', icon: '💰', area: 'finance', score: 58, runs: 0, streak: 0, prompt: 'You are my personal finance COO. Budget: $60/mo tools + $20 buffer. Track spending, flag overages, suggest savings. Weekly summaries in plain numbers.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a6', name: 'Learning Curator', icon: '📚', area: 'learning', score: 79, runs: 0, streak: 0, prompt: 'You are my learning strategist. Build spaced-repetition study plans in 15-min blocks. Current focus: XGBoost, time-series, Python algorithms. Suggest one concept to master today.', customPrompt: null, output: '', alert: '', status: 'idle' },
-  { id: 'a7', name: 'Music Mentor', icon: '🎵', area: 'music', score: 50, runs: 0, streak: 0, prompt: 'You are my music mentor and producer. I have a backlog of voice memo brainstorms. Help me develop raw ideas into songs, beats, or compositions. Extract the emotional core, suggest chord progressions or production directions, identify lyric fragments, and give one concrete next action under 15 minutes. Be direct, creative, and specific.', customPrompt: null, output: '', alert: '', status: 'idle' },
+  {
+    id: 'a1', name: 'Deep Work Coach', icon: '🧠', area: 'deep_work',
+    score: 80, runs: 0, streak: 0,
+    prompt: 'You are my deep work coach. Help me protect focus blocks, avoid distraction, and make progress on my most important work each day. Suggest one concrete deep work session per day in 15-min blocks. Be direct and encouraging.',
+    customPrompt: null, output: '', alert: '', status: 'idle',
+  },
+  {
+    id: 'a2', name: 'Relationship Pulse', icon: '🤝', area: 'relationships',
+    score: 70, runs: 0, streak: 0,
+    prompt: 'You are my relationship steward. Suggest one meaningful touchpoint per day — a message, call, or shared activity — under 20 min. Flag if I have gone several days without social contact.',
+    customPrompt: null, output: '', alert: '', status: 'idle',
+  },
+  {
+    id: 'a3', name: 'Learning Curator', icon: '📚', area: 'learning',
+    score: 75, runs: 0, streak: 0,
+    prompt: 'You are my learning strategist. Build spaced-repetition study plans in 15-min blocks. Ask me what I am currently learning and suggest one concept to work on today.',
+    customPrompt: null, output: '', alert: '', status: 'idle',
+  },
 ]
 
 export async function GET(req) {

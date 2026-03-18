@@ -87,11 +87,13 @@ export default function SettingsPage() {
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Peak focus hours</label>
-          <select style={inputStyle} value={settings.peak_hours || '8-10am, 2-4pm'} onChange={e => set('peak_hours', e.target.value)}>
+          <select style={inputStyle} value={settings.peak_hours || '9-11am, 3-5pm'} onChange={e => set('peak_hours', e.target.value)}>
+            <option value="6-8am, 12-2pm">Early bird — 6–8am and 12–2pm</option>
             <option value="8-10am, 2-4pm">8–10am and 2–4pm</option>
             <option value="9-11am, 3-5pm">9–11am and 3–5pm</option>
-            <option value="6-9am, 1-3pm">6–9am and 1–3pm (early bird)</option>
-            <option value="10am-12pm, 4-7pm">10am–12pm and 4–7pm (late starter)</option>
+            <option value="10am-12pm, 4-6pm">Late starter — 10am–12pm and 4–6pm</option>
+            <option value="1-3pm, 8-10pm">Afternoon/evening — 1–3pm and 8–10pm</option>
+            <option value="custom">Custom (edit below)</option>
           </select>
         </div>
         <div>
