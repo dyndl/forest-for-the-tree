@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase'
+import { getFeatureFlags } from '@/lib/integrations'
 import { generateMorningBriefWithOura, runAgentBrief } from '@/lib/coo'
 import { getTodayEvents, getImportantEmails, clearCOOEvents, writeCOOScheduleToCalendar, writeUrgentAlert, getRelationshipContacts, getUpcomingBirthdays, getOverdueContacts } from '@/lib/google'
 import { getOuraMorningContext } from '@/lib/oura'
@@ -45,7 +46,8 @@ async function getTokenAndContext(userId) {
     supabaseAdmin.from('user_context').select('*').eq('user_id', userId).single().then(r => r.data),
     supabaseAdmin.from('connectors').select('*').eq('user_id', userId).eq('provider', 'oura').eq('enabled', true).single().then(r => r.data),
   ])
-  return { tokenRow, userCtx, ouraConnector }
+  const flags = getFeatureFlags(userCtx?.integration_tier, userCtx?.addons)
+  return { tokenRow, userCtx, ouraConnector, flags }
 }
 
 async function runMorning(userId) {
@@ -54,8 +56,9 @@ async function runMorning(userId) {
   const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey())).data || []
 
   let calendarEvents = [], emails = [], ouraData = null
+  const { flags } = await getTokenAndContext(userId).catch(() => ({ flags: getFeatureFlags() }))
 
-  if (tokenRow?.access_token) {
+  if (flags.googleCalendar && tokenRow?.access_token) {
     try {
       await clearCOOEvents(tokenRow.access_token, tokenRow.refresh_token)
       ;[calendarEvents, emails] = await Promise.all([
