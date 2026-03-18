@@ -18,7 +18,7 @@ export async function POST(req) {
     supabaseAdmin.from('user_context').select('*').eq('user_id', userId).single().then(r => r.data),
   ])
 
-  const roadmap = userCtx?.roadmap || 'Land a DS/ML role'
+  const roadmap = userCtx?.roadmap || 'No roadmap set yet'
   let result
 
   if (type === 'midday' || type === 'afternoon') {
