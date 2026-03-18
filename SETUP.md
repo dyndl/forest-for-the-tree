@@ -1,228 +1,206 @@
-# Forest for the Trees — Setup Guide
-## Total time: ~45 minutes
+# 🌲 Forest for the Trees — Setup Guide
+## From zero to running on your phone in ~45 minutes
 
 ---
 
-## Step 1: Get the code onto your machine (5 min)
+## Prerequisites
 
-Option A — GitHub (recommended):
-1. Go to github.com → New repository → name it "forest-for-the-trees" → Create
-2. On your computer, open Terminal and run:
-```
-cd ~/Downloads
-git clone <your-repo-url>
-cp -r forest-for-the-trees/* <your-repo-path>/
-cd <your-repo-path>
+- A Google account (for Calendar, Gmail, Tasks, Contacts)
+- A [Vercel](https://vercel.com) account (free)
+- A [Supabase](https://supabase.com) account (free)
+- An [Anthropic API key](https://console.anthropic.com)
+- Node.js 18+ (for local dev only)
+
+---
+
+## Step 1 — Fork & clone (5 min)
+
+1. Fork this repo on GitLab (or GitHub)
+2. Clone it locally:
+```bash
+git clone https://gitlab.com/YOUR_USERNAME/forest-for-the-trees.git
+cd forest-for-the-trees
 npm install
-git add . && git commit -m "init" && git push
-```
-
-Option B — just unzip and run locally first:
-```
-cd ~/Downloads/forest-for-the-trees
-npm install
 ```
 
 ---
 
-## Step 2: Supabase database (10 min)
+## Step 2 — Supabase database (10 min)
 
-1. Go to supabase.com → New project (free tier)
-2. Name it "forest-for-the-trees", set a password, choose a region
-3. Wait ~2 min for it to provision
-4. Go to SQL Editor → New query
-5. Paste the entire contents of `supabase-schema.sql` → Run
-6. Go to Settings → API → copy:
-   - Project URL  → NEXT_PUBLIC_SUPABASE_URL
-   - anon public key → NEXT_PUBLIC_SUPABASE_ANON_KEY
-   - service_role key → SUPABASE_SERVICE_ROLE_KEY
+1. Go to [supabase.com](https://supabase.com) → **New project**
+2. Name it `forest-for-the-trees`, set a DB password, choose a region close to you
+3. Wait ~2 min for provisioning
+4. Go to **SQL Editor** → paste the entire contents of `supabase-schema.sql` → **Run**
+5. Go to **Settings → API** and copy:
+   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+   - `anon / public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (keep secret)
 
 ---
 
-## Step 3: Google OAuth (15 min)
+## Step 3 — Google Cloud OAuth (15 min)
 
-1. Go to console.cloud.google.com
-2. Create new project: "Forest for the Trees"
-3. APIs & Services → Enable APIs → enable all three:
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. **New project** → name it `Forest for the Trees`
+3. **APIs & Services → Library** → enable all four:
    - Google Calendar API
    - Gmail API
    - Google Tasks API
-4. APIs & Services → OAuth consent screen:
-   - User type: External
-   - App name: Forest for the Trees
-   - Add your email as test user
-   - Scopes: add calendar.readonly, gmail.readonly, tasks
-5. APIs & Services → Credentials → Create OAuth client ID:
-   - Type: Web application
-   - Authorized redirect URIs: 
-     - https://YOUR_APP.vercel.app/api/auth/callback/google
-     - http://localhost:3000/api/auth/callback/google (for local testing)
-6. Copy Client ID → GOOGLE_CLIENT_ID
-7. Copy Client Secret → GOOGLE_CLIENT_SECRET
+   - Google People API (for Contacts)
+4. **APIs & Services → OAuth consent screen**:
+   - User type: **External**
+   - App name: `Forest for the Trees`
+   - Add your email as a test user
+   - Scopes: `calendar.readonly`, `gmail.readonly`, `tasks`, `contacts.readonly`
+5. **APIs & Services → Credentials → Create OAuth client ID**:
+   - Application type: **Web application**
+   - Authorized redirect URIs:
+     - `https://YOUR_APP.vercel.app/api/auth/callback/google`
+     - `http://localhost:3000/api/auth/callback/google` (for local dev)
+6. Copy **Client ID** → `GOOGLE_CLIENT_ID`
+7. Copy **Client Secret** → `GOOGLE_CLIENT_SECRET`
 
 ---
 
-## Step 4: Deploy to Vercel (5 min)
+## Step 4 — Deploy to Vercel (10 min)
 
-1. Go to vercel.com → New Project → Import your GitHub repo
-2. Add Environment Variables (Settings → Environment Variables):
+1. Go to [vercel.com](https://vercel.com) → **New Project** → import your repo
+2. Framework: **Next.js** (auto-detected)
+3. Before deploying, add **Environment Variables**:
 
-```
-NEXTAUTH_URL          = https://YOUR_APP.vercel.app
-NEXTAUTH_SECRET       = (run: openssl rand -base64 32 in terminal)
-GOOGLE_CLIENT_ID      = from Step 3
-GOOGLE_CLIENT_SECRET  = from Step 3
-ANTHROPIC_API_KEY     = your key from console.anthropic.com
-NEXT_PUBLIC_SUPABASE_URL      = from Step 2
-NEXT_PUBLIC_SUPABASE_ANON_KEY = from Step 2
-SUPABASE_SERVICE_ROLE_KEY     = from Step 2
-CRON_SECRET           = (make up any random string)
-```
+| Key | How to get it |
+|-----|--------------|
+| `NEXTAUTH_URL` | Your Vercel URL, e.g. `https://your-app.vercel.app` |
+| `NEXTAUTH_SECRET` | Run `openssl rand -base64 32` in terminal |
+| `GOOGLE_CLIENT_ID` | From Step 3 |
+| `GOOGLE_CLIENT_SECRET` | From Step 3 |
+| `ANTHROPIC_API_KEY` | From [console.anthropic.com](https://console.anthropic.com) |
+| `NEXT_PUBLIC_SUPABASE_URL` | From Step 2 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Step 2 |
+| `SUPABASE_SERVICE_ROLE_KEY` | From Step 2 |
+| `CRON_SECRET` | Any random string — used to authenticate cron calls |
+| `OPENAI_API_KEY` | Optional — only needed for voice memo transcription |
 
-3. Deploy → copy your Vercel URL
-4. Go back to Google Console → update the redirect URI with your real Vercel URL
-5. Update NEXTAUTH_URL in Vercel env vars with your real URL
-6. Redeploy
-
----
-
-## Step 5: Install on iPhone as PWA (2 min)
-
-1. Open Safari on your iPhone
-2. Go to your Vercel URL
-3. Sign in with Google
-4. Tap the Share button (box with arrow)
-5. Tap "Add to Home Screen"
-6. Name it "Forest" → Add
-7. It appears on your home screen and opens full-screen like a native app
+4. Click **Deploy**
+5. Once deployed, copy your Vercel URL
+6. Go back to Google Cloud → add the real Vercel URL to your OAuth redirect URIs
+7. Update `NEXTAUTH_URL` in Vercel env vars with the real URL → **Redeploy**
 
 ---
 
-## What happens automatically:
+## Step 5 — First sign-in + onboarding (5 min)
 
-- **7:30am daily**: COO reads your Calendar and Gmail, builds your schedule
-- **12:00pm**: Midday check-in prompt appears
-- **4:00pm**: Afternoon check-in prompt appears  
-- **All agents**: Run silently in background at noon and 4pm, surface alerts if urgent
-
-## What you do:
-1. Open app in morning → see your schedule → Accept or Veto blocks
-2. Do the tasks → tap to complete on the matrix bubbles
-3. Answer check-ins in 1-2 sentences
-4. Add urgent tasks via quick-add anytime
+1. Open your Vercel URL in a browser
+2. Click **Connect with Google** → grant all permissions
+3. The app redirects to a 6-step onboarding:
+   - **Roadmap** — your 4-week goal + best focus hours
+   - **Life areas** — define the areas you want the COO to budget time for
+   - **COO style** — ADHD-aware mode (optional), patterns, notes, notification prefs
+   - **Oura** — optional readiness integration
+   - **Relationships** — how contact tracking works
+4. Complete onboarding → your COO is live
 
 ---
 
-## Local development (optional):
+## Step 6 — Add to phone home screen (2 min)
+
+**iPhone (Safari):**
+1. Open your Vercel URL in Safari
+2. Tap the **Share** button → **Add to Home Screen**
+3. Name it `Forest` → **Add**
+
+**Android (Chrome):**
+1. Open your Vercel URL in Chrome
+2. Tap the three-dot menu → **Add to Home Screen**
+
+The app opens full-screen like a native app.
+
+---
+
+## Cron jobs
+
+The `vercel.json` file configures three automatic runs daily:
+
+| Time | What runs |
+|------|-----------|
+| 7:30 AM | Morning brief — COO reads calendar + Gmail, builds schedule |
+| 12:00 PM | Agent sweep — all agents run silently, urgent items surfaced |
+| 4:00 PM | Agent sweep — same as noon |
+
+These run even if you never open the app. Make sure `CRON_SECRET` in Vercel matches the value in `vercel.json`.
+
+---
+
+## Optional: Oura Ring
+
+1. Go to [cloud.ouraring.com](https://cloud.ouraring.com) → Profile → Personal Access Tokens
+2. Create a token → copy it
+3. During onboarding (Step 5 above) paste it, or add it later via **Settings → Oura**
+
+When connected, the COO reads your readiness and sleep scores each morning and adjusts the day's cognitive load accordingly.
+
+---
+
+## Optional: Voice memos + media
+
+Add `OPENAI_API_KEY` to your Vercel environment variables to enable Whisper transcription.
+
+- **Voice**: tap 🎙 Record in any agent card → auto-transcribed
+- **Files**: tap 📎 Upload → PDFs, images, audio files
+- **Camera**: tap 📷 → photo or library pick → Claude analyses it
+
+Without an OpenAI key, file and image uploads still work — only audio transcription is disabled.
+
+---
+
+## Local development
 
 ```bash
 cp .env.example .env.local
-# fill in your values
+# Fill in all values
 npm run dev
-# open http://localhost:3000
+# Open http://localhost:3000
 ```
 
 ---
 
-## Questions / next features to add:
-- Oura/Whoop readiness score → auto-sets energy level
-- Plaid bank connection → real Finance Tracker data  
+## Relationship tracking setup
+
+For the Relationship Pulse agent to track overdue touchpoints:
+
+1. Open [Google Contacts](https://contacts.google.com) on desktop
+2. For each important person: click their name → **More fields** → **Custom fields**
+3. Add: key = `relationship_tier`, value = `close`, `friend`, or `acquaintance`
+
+Thresholds: **close** = 7 days, **friend** = 14 days, **acquaintance** = 30 days.
+The COO ignores untagged contacts entirely.
+
+---
+
+## Troubleshooting
+
+**`RefreshAccessTokenError`**
+→ Google Cloud: make sure the redirect URI exactly matches your Vercel URL including `https://`
+
+**Schedule not generating**
+→ Check `ANTHROPIC_API_KEY` is set in Vercel environment variables
+
+**Cron not running**
+→ Confirm `CRON_SECRET` in Vercel matches the secret in `vercel.json`
+
+**Gmail not scanning correctly**
+→ Confirm `gmail.readonly` scope was added in the OAuth consent screen and re-authenticate
+
+**Contacts not loading**
+→ Make sure Google People API is enabled and `contacts.readonly` scope is included
+
+---
+
+## Questions / feature ideas
+
+Open an issue or start a discussion on the repo. Common extension points:
+
+- Add a wearable beyond Oura (Whoop, Garmin)
 - Weekly email digest via Resend
-- Supabase Realtime → schedule updates push to phone instantly
-
-
----
-
-## Relationships setup (Google Contacts)
-
-The Relationship Pulse agent reads your Google Contacts to:
-- Track birthdays (14-day warning)
-- Flag overdue touchpoints by tier
-- Generate weekly relationship reviews every Sunday at 9am
-
-### Enable in Google Cloud Console
-Add one more scope when setting up OAuth:
-- `https://www.googleapis.com/auth/contacts.readonly`
-- `https://www.googleapis.com/auth/contacts.other.readonly`
-
-### Set relationship tiers in Google Contacts
-For the overdue tracking to work, tag your important contacts:
-1. Open Google Contacts on desktop
-2. Click a contact → "More fields" → "Custom fields"
-3. Add field: key = `relationship_tier`, value = `close`, `friend`, or `acquaintance`
-4. Thresholds: close = 7 days, friend = 14 days, acquaintance = 30 days
-
-You only need to tag maybe 20-30 key people. The COO ignores untagged contacts.
-
-### Run the new schema additions
-In Supabase SQL Editor, run the bottom section of supabase-schema.sql
-(the part starting with "-- RELATIONSHIP CACHE")
-
-
----
-
-## Voice, files, camera setup
-
-The app supports voice recording, file uploads, camera capture, and image analysis.
-
-### Add to Vercel environment variables:
-```
-OPENAI_API_KEY = your_openai_api_key
-```
-Get it from platform.openai.com — Whisper transcription costs ~$0.006/minute. A 5-minute voice memo costs 3 cents.
-
-### How to upload your voice memo backlog (iPhone):
-1. Open Voice Memos app
-2. Tap a memo → tap the three dots (…) → Save to Files
-3. Save to iCloud Drive or Files
-4. Open Forest for the Trees → Agents tab → Music Mentor
-5. Tap 📎 Upload file → pick the .m4a file
-6. The COO transcribes it with Whisper, extracts lyric fragments, melodic ideas, and production notes
-7. Tap "Run" on the Music Mentor agent — it now has your uploaded context
-
-### Live recording:
-Tap 🎙 Record in any agent card → speaks directly into your phone mic → stops and transcribes automatically.
-
-### Camera:
-Tap 📷 Camera → takes a photo or picks from library → Claude analyzes the image and adds it to the agent's context. Useful for: chord charts on paper, lyrics written in a notebook, whiteboard ideas.
-
-### Backlog:
-Tap 🗂 Backlog in any agent card to see all past uploads for that agent. Expand any card to see extracted ideas, lyric fragments, and next actions.
-
-### Run without OpenAI (fallback):
-If you don't want to add an OpenAI key, the upload still works — it just won't transcribe audio. Images and PDFs are handled by Claude directly with no OpenAI dependency.
-
-
----
-
-## Oura Ring setup
-
-1. Go to cloud.ouraring.com → Profile → Personal Access Tokens
-2. Create a new token, copy it
-3. During onboarding (step 4) paste the token — the app validates it immediately
-4. Or go to Settings → Oura Ring → paste token anytime after setup
-
-The COO uses your readiness score every morning to:
-- Auto-set your energy level (low/medium/high)
-- Adjust cognitive load in the schedule — fewer deep work blocks on low readiness days
-- Reference sleep quality in the morning brief message
-
-## What's new in this version
-
-- Onboarding flow (5 steps, runs once on first login)
-- Settings page (roadmap, peak hours, ADHD patterns, notification prefs, Oura)
-- Oura Ring integration (readiness, sleep, activity)
-- Supabase Realtime (live task + schedule updates across devices)
-- Error states + retry buttons (no more silent failures)
-- COO memory write-back (retros update your ADHD pattern history)
-- Oura-aware schedule generation (Vercel cron + on-demand)
-- Sunday weekly review on home screen
-- Offline banner + optimistic task updates
-- Settings accessible via sidebar ⚙ icon
-
-## Add to Supabase schema
-Run the additional tables from supabase-schema.sql in your Supabase SQL editor
-(the relationship_cache, relationship_briefs, connectors, user_context tables)
-Also add this column to the schedules table:
-  alter table schedules add column if not exists oura_data jsonb;
-
+- Plaid integration for finance tracking
+- Custom cron schedule (change times in `vercel.json`)
