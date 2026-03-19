@@ -235,6 +235,7 @@ export default function App(){
     {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
     {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
+    {id:'tree',icon:'🌲',label:'Life tree',badge:0,bc:''},
     {id:'log',icon:'◻',label:'Log',badge:0,bc:''},
     {id:'settings',icon:'⚙',label:'Settings',badge:0,bc:''},
   ]
@@ -268,7 +269,7 @@ export default function App(){
         </div>
         <div style={{flex:1,padding:'10px 8px',display:'flex',flexDirection:'column',gap:2}}>
           {navItems.map(item=>(
-            <button key={item.id} onClick={()=>{setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule()}}
+            <button key={item.id} onClick={()=>{if(item.id==='tree'){router.push('/tree');return};setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule()}}
               style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:'var(--r)',cursor:'pointer',color:view===item.id?'var(--acc2)':'var(--txt2)',fontSize:12.5,border:view===item.id?'1px solid var(--gb2)':'1px solid transparent',background:view===item.id?'var(--glass2)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:view===item.id?500:400}}>
               <span style={{fontSize:14,width:17,textAlign:'center'}}>{item.icon}</span>
               <span style={{flex:1}}>{item.label}</span>

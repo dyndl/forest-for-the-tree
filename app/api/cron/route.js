@@ -5,7 +5,7 @@ import { getTodayEvents, getImportantEmails, clearCOOEvents, writeCOOScheduleToC
 import { getOuraMorningContext } from '@/lib/oura'
 import { generateRelationshipBrief } from '@/lib/coo'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }

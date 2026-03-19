@@ -207,3 +207,198 @@ alter table media_uploads enable row level security;
 alter table agent_context enable row level security;
 create policy "users own media" on media_uploads for all using (user_id = current_user);
 create policy "users own agent_context" on agent_context for all using (user_id = current_user);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LIFE TREE (TreeView) — user_id is NextAuth email (text), same as tasks / agents
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table if not exists tree_species (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  birth_year int not null default 1990,
+  current_tier int not null default 1,
+  species_name text not null default 'Bonsai',
+  species_slug text not null default 'bonsai',
+  species_emoji text not null default '🌿',
+  height_xp int not null default 0,
+  width_xp int not null default 0,
+  root_bonus_xp int not null default 0,
+  arborist_score int not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(user_id)
+);
+
+create table if not exists tree_branches (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  label text not null,
+  start_year int not null,
+  end_year int,
+  state text not null default 'growing'
+    check (state in (
+      'growing','stunted','done','dormant',
+      'pruned','storm-fell','fractured','blighted','atrophied','severed'
+    )),
+  side int not null default 1 check (side in (1, -1)),
+  depth_factor numeric not null default 3,
+  sort_order int not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists tree_fruits (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  branch_id uuid not null references tree_branches(id) on delete cascade,
+  year int not null,
+  label text not null,
+  emoji text not null default '🍏',
+  xp_value int not null default 80,
+  validated bool not null default false,
+  created_at timestamptz default now()
+);
+
+create table if not exists tree_roots (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  label text not null,
+  origin_year int not null,
+  years_ago int not null,
+  score int not null default 3 check (score between 1 and 8),
+  depth_factor numeric not null default 3,
+  angle int not null default 20,
+  side int not null default 1 check (side in (1, -1)),
+  created_at timestamptz default now()
+);
+
+create table if not exists tree_rings (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  year int not null,
+  ring_width int not null default 8,
+  chapter text,
+  score int not null default 3 check (score between 1 and 8),
+  created_at timestamptz default now(),
+  unique(user_id, year)
+);
+
+create table if not exists tree_relationships (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  name text not null,
+  score int not null default 5 check (score between 1 and 8),
+  side text not null default 'left' check (side in ('left', 'right')),
+  sort_order int not null default 0,
+  created_at timestamptz default now()
+);
+
+create table if not exists tree_legacies (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  label text not null,
+  branch_id uuid references tree_branches(id) on delete set null,
+  side int not null default 1 check (side in (1, -1)),
+  target_year int,
+  created_at timestamptz default now()
+);
+
+create table if not exists tree_xp_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  source text not null,
+  source_id uuid,
+  h_xp_delta int not null default 0,
+  w_xp_delta int not null default 0,
+  note text,
+  created_at timestamptz default now()
+);
+
+alter table tree_species enable row level security;
+alter table tree_branches enable row level security;
+alter table tree_fruits enable row level security;
+alter table tree_roots enable row level security;
+alter table tree_rings enable row level security;
+alter table tree_relationships enable row level security;
+alter table tree_legacies enable row level security;
+alter table tree_xp_events enable row level security;
+
+create policy "tree_species_own" on tree_species for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_branches_own" on tree_branches for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_fruits_own" on tree_fruits for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_roots_own" on tree_roots for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_rings_own" on tree_rings for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_relationships_own" on tree_relationships for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_legacies_own" on tree_legacies for all using (user_id = current_user) with check (user_id = current_user);
+create policy "tree_xp_events_own" on tree_xp_events for all using (user_id = current_user) with check (user_id = current_user);
+
+create index if not exists idx_tree_branches_user on tree_branches(user_id);
+create index if not exists idx_tree_fruits_branch on tree_fruits(branch_id);
+create index if not exists idx_tree_rings_user_year on tree_rings(user_id, year desc);
+create index if not exists idx_tree_roots_user on tree_roots(user_id);
+create index if not exists idx_tree_relationships_user on tree_relationships(user_id);
+create index if not exists idx_tree_legacies_user on tree_legacies(user_id);
+create index if not exists idx_tree_xp_user on tree_xp_events(user_id, created_at desc);
+
+create or replace function tree_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists tree_species_updated_at on tree_species;
+create trigger tree_species_updated_at
+  before update on tree_species
+  for each row execute function tree_set_updated_at();
+
+drop trigger if exists tree_branches_updated_at on tree_branches;
+create trigger tree_branches_updated_at
+  before update on tree_branches
+  for each row execute function tree_set_updated_at();
+
+create or replace function compute_tier_xp(tier int, height_ft numeric, width_ft numeric)
+returns table (h_xp int, w_xp int) language plpgsql as $$
+begin
+  return query select
+    round(18 * power(tier, 1.6) * power(height_ft / 90.0, 0.55))::int,
+    round(12 * power(tier, 1.6) * power(least(width_ft, 50.0) / 8.0, 0.55))::int;
+end;
+$$;
+
+create table if not exists tree_species_catalog (
+  tier int primary key,
+  name text not null,
+  emoji text not null,
+  slug text not null,
+  tier_group int not null,
+  group_name text not null,
+  width_ft numeric not null,
+  height_ft numeric not null,
+  fact text,
+  exemplar text
+);
+
+insert into tree_species_catalog values
+  (1,  'Bonsai',          '🌿', 'bonsai',          1, 'Miniatures',        0.25,  2,  'Cultivated for centuries. Every branch a deliberate choice.',          'Thoreau — deliberate'),
+  (2,  'Japanese Maple',  '🍁', 'japanese-maple',   1, 'Miniatures',        1,    22,  'Prized 300 years in Japanese gardens.',                               'Kintsugi — repair'),
+  (8,  'Apple/Pear',      '🍎', 'apple-pear',       1, 'Miniatures',        1.5,  25,  'First cultivated 4,000 years ago.',                                   'Johnny Appleseed'),
+  (9,  'Cherry',          '🌸', 'cherry',           1, 'Miniatures',        1.5,  25,  'Blooms two weeks per year.',                                           'Hokusai'),
+  (11, 'Bamboo',          '🎋', 'bamboo',           2, 'Slender Adaptors',  0.5,  60,  'Grows 35 inches per day.',                                            'Early Bezos'),
+  (16, 'Aspen',           '🍂', 'aspen',            2, 'Slender Adaptors',  1.5,  60,  'Pando: 47,000 stems, one root system.',                               'Networked entrepreneur'),
+  (17, 'Birch',           '🌿', 'birch',            2, 'Slender Adaptors',  1.5,  60,  'First to colonise bare ground after glaciers.',                       'Sylvia Plath'),
+  (21, 'Dragon Blood',    '🩸', 'dragon-blood',     3, 'Rare & Specialized',4,    30,  'Found only on Socotra Island. Bleeds crimson sap.',                   'Rare polymaths'),
+  (24, 'Ginkgo',          '🍃', 'ginkgo',           3, 'Rare & Specialized',3,    80,  '270 million year old species.',                                       'Darwin'),
+  (25, 'Bristlecone',     '🌲', 'bristlecone',      3, 'Rare & Specialized',3,    30,  'Methuselah: 4,855 years old.',                                        'Buffett & Munger'),
+  (34, 'Olive',           '🫒', 'olive',            4, 'Core Forest',       3,    25,  'Trees in Gethsemane 2,000+ years old.',                               'Confucius'),
+  (42, 'Cedar',           '🌲', 'cedar',            4, 'Core Forest',       4,    70,  'Solomon''s Temple built from Lebanese Cedar.',                        'Marcus Aurelius'),
+  (45, 'Pine',            '🌲', 'pine',             4, 'Core Forest',       4,   175,  'Sequestered carbon for 300 million years.',                           'Einstein'),
+  (51, 'Oak',             '🌳', 'oak',              5, 'Canopy Kings',      8,    90,  'Hosts 500+ species. Lives 1,000 years.',                              'Warren Buffett'),
+  (54, 'Sycamore',        '🌳', 'sycamore',         5, 'Canopy Kings',      9,   100,  'Peeling bark reveals new face each season.',                          'Shakespeare'),
+  (58, 'Douglas-fir',     '🌲', 'douglas-fir',      5, 'Canopy Kings',     15,   250,  'Some live 1,500 years, grow 250ft.',                                  'Da Vinci'),
+  (62, 'Coast Redwood',   '🌲', 'redwood',          6, 'Titans',           25,   380,  'Tallest living thing at 380ft.',                                      'Einstein/Darwin'),
+  (63, 'Giant Sequoia',   '🌲', 'sequoia',          6, 'Titans',           30,   275,  'General Sherman: largest organism by volume.',                        'Newton/Shakespeare'),
+  (66, 'Banyan',          '🌳', 'banyan',           6, 'Titans',          500,    80,  'Great Banyan covers 3.5 acres.',                                      'Gandhi/Buddha'),
+  (69, 'World Tree',      '🌍', 'world-tree',       6, 'Titans',          999,   999,  'Yggdrasil: the cosmic tree connecting nine worlds.',                  'Humanity')
+on conflict (tier) do nothing;
