@@ -102,6 +102,38 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+      <Section title="Life tree background">
+        <p style={{ fontSize: 11, color: '#7aaa8a', marginBottom: 12, lineHeight: 1.55 }}>
+          Background photos use <span style={mono}>/public/species/{'{key}'}.jpg</span>. <strong style={{ color: '#3a5c47' }}>Rotate</strong> only shuffles variants for your <em>current</em> species — add alternate filenames on the Life tree page.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {[
+            { id: 'sticky', title: 'Fixed for this evolution', desc: 'Same default portrait until your tier unlocks the next species.' },
+            { id: 'rotate_load', title: 'Rotate each visit', desc: 'Random pick from your gallery for this species only (each time you load the tree).' },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => set('tree_bg_mode', opt.id)}
+              style={{
+                textAlign: 'left',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: `1px solid ${(settings.tree_bg_mode || 'sticky') === opt.id ? '#1a5a3c' : 'rgba(122,170,138,0.35)'}`,
+                background: (settings.tree_bg_mode || 'sticky') === opt.id ? 'rgba(26,90,60,0.08)' : 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: '#182e22', fontSize: 12.5 }}>{opt.title}</div>
+              <div style={{ fontSize: 11, color: '#7aaa8a', marginTop: 4, lineHeight: 1.45 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+        <a href="/tree" target="_top" style={{ display: 'inline-block', fontSize: 12, fontWeight: 600, color: '#1a5a3c', textDecoration: 'none', padding: '8px 0' }}>
+          Open Life tree — gallery, past tiers, shuffle →
+        </a>
+      </Section>
+
       <Section title="ADHD Patterns">
         <p style={{ fontSize: 11, color: '#7aaa8a', marginBottom: 10, lineHeight: 1.5 }}>The COO watches for these and names them in check-ins and retros.</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

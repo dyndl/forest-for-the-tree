@@ -167,6 +167,11 @@ create policy "users own relationship_briefs" on relationship_briefs for all usi
 create policy "users own connectors" on connectors for all using (user_id = current_user);
 create policy "users own user_context" on user_context for all using (user_id = current_user);
 
+-- Life tree background preferences (see /api/tree + settings)
+alter table user_context add column if not exists tree_bg_mode text default 'sticky';
+alter table user_context add column if not exists tree_favorites_by_tier jsonb default '{}'::jsonb;
+alter table user_context add column if not exists tree_gallery_by_slug jsonb default '{}'::jsonb;
+
 -- MEDIA UPLOADS (voice memos, images, files)
 create table if not exists media_uploads (
   id text primary key,
@@ -402,3 +407,37 @@ insert into tree_species_catalog values
   (66, 'Banyan',          '🌳', 'banyan',           6, 'Titans',          500,    80,  'Great Banyan covers 3.5 acres.',                                      'Gandhi/Buddha'),
   (69, 'World Tree',      '🌍', 'world-tree',       6, 'Titans',          999,   999,  'Yggdrasil: the cosmic tree connecting nine worlds.',                  'Humanity')
 on conflict (tier) do nothing;
+
+-- When current_tier changes (or row is created), copy display fields from the catalog tier
+-- that best matches: greatest catalog.tier <= user tier (handles sparse tier rows).
+create or replace function tree_species_sync_from_catalog()
+returns trigger language plpgsql as $$
+declare
+  v_name  text;
+  v_emoji text;
+  v_slug  text;
+begin
+  if tg_op = 'UPDATE' and new.current_tier is not distinct from old.current_tier then
+    return new;
+  end if;
+
+  select c.name, c.emoji, c.slug into v_name, v_emoji, v_slug
+  from tree_species_catalog c
+  where c.tier <= new.current_tier
+  order by c.tier desc
+  limit 1;
+
+  if v_slug is not null then
+    new.species_name := v_name;
+    new.species_emoji := v_emoji;
+    new.species_slug := v_slug;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tree_species_sync_from_catalog on tree_species;
+create trigger tree_species_sync_from_catalog
+  before insert or update of current_tier on tree_species
+  for each row execute function tree_species_sync_from_catalog();

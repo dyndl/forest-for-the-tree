@@ -27,6 +27,12 @@ const DEFAULTS = {
     birthday_alerts: true,
   },
   onboarding_complete: false,
+  /** sticky = one bg image until next evolution. rotate_load = random from tree_gallery_by_slug[current species slug] */
+  tree_bg_mode: 'sticky',
+  /** @deprecated rotation now uses tree_gallery_by_slug */
+  tree_favorites_by_tier: {},
+  /** { "bristlecone": ["bristlecone","bristlecone-dusk"], ... } — image keys = /public/species/{key}.jpg, same species only */
+  tree_gallery_by_slug: {},
 }
 
 export async function GET(req) {

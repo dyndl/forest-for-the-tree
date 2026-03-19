@@ -2,10 +2,10 @@
 
 /**
  * TreeView — living trunk timeline (Forest for the Trees).
- * Loads data via GET /api/tree (NextAuth + service role), not browser Supabase.
+ * Parent fetches GET /api/tree and passes `treeData` (or use loading/error only).
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const SW = 4
 const TOP = 50
@@ -273,50 +273,22 @@ const wrap = {
   }),
 }
 
-export default function TreeView({ userId }) {
+export default function TreeView({ treeData, treeLoading, treeError }) {
   const hostRef = useRef(null)
   const scrollRef = useRef(null)
   const roRef = useRef(null)
 
   const [gran, setGran] = useState('year')
   const [zoom, setZoom] = useState(1)
-  const [speciesData, setSpeciesData] = useState(null)
-  const [branches, setBranches] = useState([])
-  const [roots, setRoots] = useState([])
-  const [rings, setRings] = useState([])
-  const [rels, setRels] = useState([])
-  const [legacies, setLegacies] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
 
-  useEffect(() => {
-    if (!userId) return
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch('/api/tree', { credentials: 'include' })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(j.error || res.statusText)
-        if (cancelled) return
-        setSpeciesData(j.species)
-        setBranches(j.branches || [])
-        setRoots(j.roots || [])
-        setRings(j.rings || [])
-        setRels(j.relationships || [])
-        setLegacies(j.legacies || [])
-      } catch (e) {
-        if (!cancelled) setError(e.message || 'Failed to load tree')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
+  const speciesData = treeData?.species ?? null
+  const branches = treeData?.branches ?? []
+  const roots = treeData?.roots ?? []
+  const rings = treeData?.rings ?? []
+  const rels = treeData?.relationships ?? []
+  const legacies = treeData?.legacies ?? []
+  const loading = treeLoading
+  const error = treeError
 
   const render = useCallback(() => {
     if (!hostRef.current || !speciesData) return
@@ -389,9 +361,8 @@ export default function TreeView({ userId }) {
 
   if (!speciesData) return null
 
-  const speciesPhoto = speciesData.species_slug
-    ? `/species/${speciesData.species_slug}.jpg`
-    : '/species/bristlecone.jpg'
+  const slug = speciesData.display_slug || speciesData.species_slug
+  const speciesPhoto = slug ? `/species/${slug}.jpg` : '/species/bristlecone.jpg'
 
   return (
     <div style={wrap.outer}>
@@ -446,41 +417,30 @@ export default function TreeView({ userId }) {
   )
 }
 
-export function useTreeData(userId) {
+export function useTreeData() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    if (!userId) return
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch('/api/tree', { credentials: 'include' })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(j.error || res.statusText)
-        if (cancelled) return
-        setData({
-          species: j.species,
-          branches: j.branches || [],
-          roots: j.roots || [],
-          rings: j.rings || [],
-          relationships: j.relationships || [],
-          legacies: j.legacies || [],
-        })
-      } catch (e) {
-        if (!cancelled) setError(e)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/tree', { credentials: 'include' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || res.statusText)
+      setData(j)
+    } catch (e) {
+      setError(e.message || 'Failed to load tree')
+      setData(null)
+    } finally {
+      setLoading(false)
     }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
+  }, [])
 
-  return { data, loading, error }
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { data, loading, error, refresh }
 }
