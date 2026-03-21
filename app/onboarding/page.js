@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 
 const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'whisper', 'relationships', 'done']
 const ADDON_STEPS = { oura: 'oura', whisper: 'whisper' } // deepgram has no setup step — app holds the key
@@ -163,11 +164,15 @@ function ProgressDots({ step }) {
 }
 
 // ══ STEP 1: WELCOME + INTEGRATION TIER ════════════════════════════════════════
-function WelcomeStep({ data, onChange, onNext }) {
+function WelcomeStep({ data, onChange, onNext, onRestore }) {
   const tier = data.integration_tier || 'google'
   const addons = data.addons || []
   const toggleAddon = (id) =>
     onChange('addons', addons.includes(id) ? addons.filter(a => a !== id) : [...addons, id])
+  const [hasBackup, setHasBackup] = useState(false)
+  useEffect(() => {
+    try { setHasBackup(!!localStorage.getItem(BACKUP_KEY)) } catch {}
+  }, [])
 
   return (
     <div>
@@ -250,6 +255,11 @@ function WelcomeStep({ data, onChange, onNext }) {
       </div>
 
       <button style={btnPrimary} onClick={onNext}>Get started →</button>
+      {hasBackup && (
+        <button style={{ ...btnGhost, marginTop: 8, fontSize: 11, color: '#5a7a68' }} onClick={() => { onRestore(); setHasBackup(false) }}>
+          ↩ Restore from last session
+        </button>
+      )}
     </div>
   )
 }
@@ -835,26 +845,71 @@ function ScheduleStep({ data, onChange, onNext, onBack }) {
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={label9}>Notification preferences</label>
+        <label style={label9}>Check-in schedule</label>
+
+        {/* Timed check-ins — toggle + time picker */}
         {[
-          ['morning_brief',     'Morning brief (8am)'],
-          ['midday_checkin',    'Midday check-in (12pm)'],
-          ['afternoon_checkin', 'Afternoon pulse (4pm)'],
-          ['evening_retro',     'Evening retro (7pm)'],
-          ['urgent_alerts',     'Urgent agent alerts (immediate)'],
-          ['birthday_alerts',   'Birthday alerts'],
-        ].map(([key, lbl]) => (
-          <div key={key} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '6px 0', borderBottom: '0.5px solid rgba(122,170,138,0.2)',
-          }}>
-            <span style={{ fontSize: 12, color: '#3a5c47' }}>{lbl}</span>
-            <Toggle
-              on={data.notification_prefs?.[key] !== false}
-              onChange={v => onChange('notification_prefs', { ...data.notification_prefs, [key]: v })}
-            />
+          { key: 'morning_brief',     timeKey: 'morning_brief_time',     label: 'Morning brief',    def: '07:30' },
+          { key: 'midday_checkin',    timeKey: 'midday_checkin_time',    label: 'Midday check-in',  def: '12:00' },
+          { key: 'afternoon_checkin', timeKey: 'afternoon_checkin_time', label: 'Afternoon pulse',  def: '16:00' },
+          { key: 'evening_retro',     timeKey: 'evening_retro_time',     label: 'Evening retro',    def: '19:00' },
+        ].map(({ key, timeKey, label, def }) => {
+          const on = data.notification_prefs?.[key] !== false
+          const time = data.notification_prefs?.[timeKey] || def
+          const setPrefs = patch => onChange('notification_prefs', { ...data.notification_prefs, ...patch })
+          return (
+            <div key={key} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '7px 0', borderBottom: '0.5px solid rgba(122,170,138,0.2)', gap: 8,
+            }}>
+              <span style={{ fontSize: 12, color: on ? '#3a5c47' : '#9ab8a8', flex: 1, transition: 'color .2s' }}>{label}</span>
+              {on && (
+                <input
+                  type="time"
+                  value={time}
+                  onChange={e => setPrefs({ [timeKey]: e.target.value })}
+                  style={{
+                    ...mono, fontSize: 11, color: '#1a5a3c', background: 'rgba(45,122,82,0.06)',
+                    border: '1px solid rgba(122,170,138,0.25)', borderRadius: 5,
+                    padding: '2px 6px', cursor: 'pointer', outline: 'none',
+                  }}
+                />
+              )}
+              <Toggle on={on} onChange={v => setPrefs({ [key]: v })} />
+            </div>
+          )
+        })}
+
+        {/* Nudge if 2+ core check-ins disabled */}
+        {[
+          data.notification_prefs?.morning_brief,
+          data.notification_prefs?.midday_checkin,
+          data.notification_prefs?.afternoon_checkin,
+          data.notification_prefs?.evening_retro,
+        ].filter(v => v === false).length >= 2 && (
+          <div style={{ fontSize: 11, color: '#8a5a28', marginTop: 8, padding: '7px 10px', background: 'rgba(138,90,40,0.07)', borderRadius: 7, lineHeight: 1.5 }}>
+            Fewer anchor points means the COO has less to work with. That's fine — just worth knowing.
           </div>
-        ))}
+        )}
+
+        {/* Non-timed alerts */}
+        <div style={{ marginTop: 6 }}>
+          {[
+            ['urgent_alerts',  'Urgent agent alerts (immediate)'],
+            ['birthday_alerts','Birthday alerts'],
+          ].map(([key, lbl]) => (
+            <div key={key} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '7px 0', borderBottom: '0.5px solid rgba(122,170,138,0.2)',
+            }}>
+              <span style={{ fontSize: 12, color: '#3a5c47' }}>{lbl}</span>
+              <Toggle
+                on={data.notification_prefs?.[key] !== false}
+                onChange={v => onChange('notification_prefs', { ...data.notification_prefs, [key]: v })}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       <button style={btnPrimary} onClick={onNext}>Continue →</button>
@@ -1083,7 +1138,7 @@ const SCAN_LABELS = [
   'Building your plan…',
 ]
 
-function DoneStep({ onFinish, saving }) {
+function DoneStep({ onFinish, saving, saveError }) {
   const [phase, setPhase]       = useState('scanning')   // 'scanning' | 'ready'
   const [briefing, setBriefing] = useState(null)
   const [approved, setApproved] = useState({})
@@ -1237,18 +1292,24 @@ function DoneStep({ onFinish, saving }) {
         </div>
       )}
 
+      {saveError && (
+        <div style={{ fontSize: 11, color: '#8a2828', padding: '8px 12px', background: 'rgba(138,40,40,0.07)', borderRadius: 8, marginBottom: 10 }}>
+          Something went wrong saving your settings. Your data is safe — tap below to try again.
+        </div>
+      )}
       <button
         style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}
         onClick={handleFinish}
         disabled={saving}
       >
-        {saving ? 'Saving…' : "Let's go →"}
+        {saving ? 'Saving…' : saveError ? 'Retry →' : "Let's go →"}
       </button>
     </div>
   )
 }
 
-const DRAFT_KEY = 'fftt_onboarding'
+const DRAFT_KEY   = 'fftt_onboarding'
+const BACKUP_KEY  = 'fftt_onboarding_backup'
 
 const DEFAULT_FORM = {
   integration_tier: 'google',
@@ -1260,12 +1321,12 @@ const DEFAULT_FORM = {
   adhd_patterns:    [],
   coo_notes:        '',
   notification_prefs: {
-    morning_brief:     true,
-    midday_checkin:    true,
-    afternoon_checkin: true,
-    evening_retro:     true,
-    urgent_alerts:     true,
-    birthday_alerts:   true,
+    morning_brief:           true,  morning_brief_time:    '07:30',
+    midday_checkin:          true,  midday_checkin_time:   '12:00',
+    afternoon_checkin:       true,  afternoon_checkin_time:'16:00',
+    evening_retro:           true,  evening_retro_time:    '19:00',
+    urgent_alerts:           true,
+    birthday_alerts:         true,
   },
   life_areas:          [],
   outline:             '',
@@ -1274,18 +1335,22 @@ const DEFAULT_FORM = {
 }
 
 // ══ MAIN CONTROLLER ════════════════════════════════════════════════════════════
-export default function OnboardingPage() {
+function OnboardingPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [step, setStep]               = useState('welcome')
   const [saving, setSaving]           = useState(false)
+  const [saveError, setSaveError]     = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [formData, setFormData]       = useState(DEFAULT_FORM)
   const [restored, setRestored]       = useState(false) // gate: don't save until restore is done
+  const [ouraStatus, setOuraStatus]   = useState(null)  // captured before URL param is cleared
 
   // On mount: restore draft from localStorage → fallback to Supabase → mark ready to save
   useEffect(() => {
     const ouraParam = searchParams.get('oura')
+    // Capture before replaceState clears the URL — OuraStep may not render until after
+    if (ouraParam) setOuraStatus(ouraParam)
 
     async function restore() {
       // 1. Try localStorage first (most current — has live step position)
@@ -1378,11 +1443,27 @@ export default function OnboardingPage() {
     } catch { /* non-fatal */ }
   }
 
-  function startOver() {
+  async function startOver() {
+    // Save snapshot before wiping so user can restore if they change their mind
+    try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ formData, savedAt: new Date().toISOString() })) } catch {}
     try { localStorage.removeItem(DRAFT_KEY) } catch {}
-    setFormData(DEFAULT_FORM)
-    setStep('welcome')
-    setConfirmReset(false)
+    // Reset Supabase so restore effect doesn't repopulate the form on next login
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...DEFAULT_FORM, onboarding_complete: false }),
+    }).catch(() => {})
+    signOut({ callbackUrl: '/' })
+  }
+
+  function restoreFromBackup() {
+    try {
+      const backup = JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null')
+      if (backup?.formData) {
+        setFormData(f => ({ ...f, ...backup.formData }))
+        localStorage.removeItem(BACKUP_KEY)
+      }
+    } catch {}
   }
 
   const set  = (key, val) => setFormData(f => ({ ...f, [key]: val }))
@@ -1404,8 +1485,8 @@ export default function OnboardingPage() {
       formData.life_areas.map(a => [a.key, a.blocks * 15])
     )
     try {
-      // Save settings
-      await fetch('/api/settings', {
+      // Save settings — throw on non-OK so catch block fires instead of redirecting
+      const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1426,6 +1507,8 @@ export default function OnboardingPage() {
           onboarding_complete:  true,
         }),
       })
+      if (!res.ok) throw new Error(`Settings save failed: ${res.status}`)
+
       // Save generated agents (if any confirmed)
       if (formData.pending_agents?.length > 0) {
         await fetch('/api/agents', {
@@ -1434,11 +1517,15 @@ export default function OnboardingPage() {
           body: JSON.stringify({ agents: formData.pending_agents, replace_defaults: true }),
         })
       }
-    } finally {
+      // Only clear and redirect after confirmed save
       try { localStorage.removeItem(DRAFT_KEY) } catch {}
       router.push('/')
+    } catch (err) {
+      console.error('finish error:', err)
+      setSaving(false)
+      setSaveError(true)
+      // Stay on done step — user can retry; data is still in localStorage
     }
-    setSaving(false)
   }
 
   return (
@@ -1447,15 +1534,15 @@ export default function OnboardingPage() {
       <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: 16, overflowY: 'auto' }}>
         <div style={glassCard}>
           {step !== 'welcome' && step !== 'done' && <ProgressDots step={step} />}
-          {step === 'welcome'       && <WelcomeStep data={formData} onChange={set} onNext={next} />}
+          {step === 'welcome'       && <WelcomeStep data={formData} onChange={set} onNext={next} onRestore={restoreFromBackup} />}
           {step === 'roadmap'       && <RoadmapStep       data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'areas'         && <AreasStep         data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'outline'       && <OutlineStep      data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'schedule'      && <ScheduleStep      data={formData} onChange={set} onNext={next} onBack={back} />}
-          {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} initialStatus={searchParams.get('oura')} />}
+          {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} initialStatus={ouraStatus} />}
           {step === 'whisper'       && <WhisperStep       onNext={next} onBack={back} onSkip={next} />}
           {step === 'relationships' && <RelationshipsStep data={formData} onChange={set} onNext={next} onBack={back} />}
-          {step === 'done'          && <DoneStep          onFinish={finish} saving={saving} />}
+          {step === 'done'          && <DoneStep          onFinish={finish} saving={saving} saveError={saveError} />}
 
           {/* Start over — shown on all steps except done */}
           {step !== 'done' && (
@@ -1483,5 +1570,13 @@ export default function OnboardingPage() {
         </div>
       </div>
     </>
+  )
+}
+
+export default function OnboardingPageWrapper() {
+  return (
+    <Suspense>
+      <OnboardingPage />
+    </Suspense>
   )
 }

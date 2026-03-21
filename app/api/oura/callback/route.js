@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getOuraMorningContext } from '@/lib/oura'
 
+const OURA_API = 'https://api.ouraring.com'
+
 export const dynamic = 'force-dynamic'
 
 // GET /api/oura/callback — Oura OAuth2 callback
@@ -50,6 +52,13 @@ export async function GET(req) {
   const { access_token, refresh_token, expires_in } = await tokenRes.json()
   const userId = state.email
 
+  // Fetch Oura personal info (gives us oura_user_id for webhook routing)
+  const personalRes = await fetch(`${OURA_API}/v2/usercollection/personal_info`, {
+    headers: { Authorization: `Bearer ${access_token}` },
+  })
+  const personal   = personalRes.ok ? await personalRes.json() : {}
+  const ouraUserId = personal.id || null
+
   // Fetch initial Oura data
   const ouraData = await getOuraMorningContext(access_token).catch(() => null)
 
@@ -64,6 +73,7 @@ export async function GET(req) {
     name: 'Oura Ring',
     type: 'oauth',
     provider: 'oura',
+    oura_user_id: ouraUserId,
     credentials: { access_token, refresh_token, expires_at: expiresAt },
     scopes: ['daily', 'heartrate', 'personal'],
     enabled: true,
@@ -71,6 +81,24 @@ export async function GET(req) {
     metadata: { last_data: ouraData, cached_at: new Date().toISOString() },
     created_at: new Date().toISOString(),
   }, { onConflict: 'id,user_id' })
+
+  // Register Oura webhook subscription (fire-and-forget)
+  if (ouraUserId && process.env.OURA_WEBHOOK_SECRET) {
+    const webhookBase = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    fetch(`${OURA_API}/v2/webhook/subscription`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        callback_url:       `${webhookBase}/api/webhooks/oura`,
+        event_type:         'create',
+        data_type:          'daily_sleep',
+        verification_token: process.env.OURA_WEBHOOK_SECRET,
+      }),
+    }).catch(() => {}) // non-fatal
+  }
 
   // Update energy default from readiness if available
   if (ouraData?.energy_level) {

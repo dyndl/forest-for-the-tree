@@ -1,8 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron?type=morning",       "schedule": "30 7 * * *"  },
-    { "path": "/api/cron?type=agents",        "schedule": "0 12 * * *"  },
-    { "path": "/api/cron?type=agents",        "schedule": "0 16 * * *"  },
-    { "path": "/api/cron?type=relationships", "schedule": "0 9 * * 0"   }
+    { "path": "/api/cron?type=morning",       "schedule": "30 7 * * *" },
+    { "path": "/api/cron?type=relationships", "schedule": "0 9 * * 0"  }
   ]
 }

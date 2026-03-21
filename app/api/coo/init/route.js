@@ -92,6 +92,19 @@ export async function GET() {
     hasGoogle && contactCount > 0 ? 'Scan contacts for upcoming birthdays and overdue touchpoints' : null,
   ].filter(Boolean)
 
+  // ── Register webhook watches (fire-and-forget) ───────────────────────────────
+  if (hasGoogle) {
+    const base = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    fetch(`${base}/api/webhooks/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        Authorization:   `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({ user_id: userId }),
+    }).catch(() => {}) // non-fatal — watches are best-effort
+  }
+
   // ── Generate personalised background proposals via Claude ───────────────────
   const background_proposals = await generateBootProposals({
     userCtx,

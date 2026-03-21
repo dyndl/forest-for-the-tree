@@ -28,9 +28,13 @@ export async function GET(req) {
   for (const userId of userIds) {
     try {
       let result
-      if (type === 'morning')       result = await runMorning(userId)
-      else if (type === 'agents')   result = await runAgents(userId)
-      else if (type === 'relationships') result = await runRelationships(userId)
+      if (type === 'morning')            result = await runMorning(userId)
+      else if (type === 'agents')        result = await runAgents(userId)
+      else if (type === 'relationships') {
+        const [rel, watches] = await Promise.all([runRelationships(userId), renewWatches(userId)])
+        result = { ...rel, watches }
+      }
+      else if (type === 'renew_watches') result = await renewWatches(userId)
       results.push({ userId, type, ...result })
     } catch (err) {
       results.push({ userId, type, error: err.message })
@@ -115,7 +119,8 @@ async function runMorning(userId) {
       // Add Oura note to morning brief calendar event
       eventsCreated = await writeCOOScheduleToCalendar(
         tokenRow.access_token, tokenRow.refresh_token,
-        { slots, top_3_mits: plan.top_3_mits, oura_note: plan.oura_note }
+        { slots, top_3_mits: plan.top_3_mits, oura_note: plan.oura_note },
+        userCtx?.notification_prefs
       )
     } catch (e) { console.error('Calendar write error:', e.message) }
   }
@@ -184,4 +189,18 @@ async function runRelationships(userId) {
   }
 
   return { ok: true, contactsScanned: contacts.length, overdueFound: overdue.length, birthdaysSoon: birthdays.length }
+}
+
+async function renewWatches(userId) {
+  const base = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+  const res = await fetch(`${base}/api/webhooks/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization:  `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ user_id: userId }),
+  })
+  const data = await res.json().catch(() => ({}))
+  return { ok: res.ok, ...data.results }
 }

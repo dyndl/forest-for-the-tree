@@ -478,3 +478,23 @@ drop trigger if exists tree_species_sync_from_catalog on tree_species;
 create trigger tree_species_sync_from_catalog
   before insert or update of current_tier on tree_species
   for each row execute function tree_species_sync_from_catalog();
+
+-- ── WEBHOOK CHANNELS ──────────────────────────────────────────────────────────
+-- Stores active Gmail Pub/Sub watches and Google Calendar events.watch channels.
+-- Rows are keyed by "{provider}_{user_id}" (e.g. "gmail_user@example.com").
+create table if not exists webhook_channels (
+  id          text primary key,             -- "gmail_{userId}" | "cal_{userId}"
+  user_id     text not null,
+  provider    text not null,               -- "gmail" | "calendar"
+  channel_id  text,                        -- Calendar only: UUID we generated
+  resource_id text,                        -- Calendar only: Google's opaque resourceId
+  history_id  text,                        -- Gmail only: last processed historyId
+  expiration  bigint,                      -- Unix ms when the watch expires
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+create index if not exists webhook_channels_user on webhook_channels(user_id);
+
+-- ── CONNECTORS: add oura_user_id column ──────────────────────────────────────
+-- Stores Oura's internal user ID so webhook pushes can be routed to the right user.
+alter table connectors add column if not exists oura_user_id text;
