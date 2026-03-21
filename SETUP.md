@@ -57,6 +57,7 @@ npm install
    - Authorized redirect URIs:
      - `https://YOUR_APP.vercel.app/api/auth/callback/google`
      - `http://localhost:3000/api/auth/callback/google` (for local dev)
+     - If Next.js prints **another port** (e.g. 3001, 3002), add that URI too **or** free port 3000 and use `npm run dev:3000`
 6. Copy **Client ID** → `GOOGLE_CLIENT_ID`
 7. Copy **Client Secret** → `GOOGLE_CLIENT_SECRET`
 
@@ -159,8 +160,10 @@ Without an OpenAI key, file and image uploads still work — only audio transcri
 cp .env.example .env.local
 # Fill in all values
 npm run dev
-# Open http://localhost:3000
+# Open the URL Next prints (often http://localhost:3000)
 ```
+
+**`NEXTAUTH_URL` must match that URL exactly**, including **port** (e.g. `http://localhost:3002` if the dev server chose 3002). In Google Cloud → OAuth client → **Authorized redirect URIs**, add `http://localhost:PORT/api/auth/callback/google` for the same port. If you prefer a fixed port, stop whatever is using 3000 and run `npm run dev:3000`.
 
 ---
 
@@ -211,6 +214,9 @@ No data migration needed for most updates. If a new release adds database column
 
 ## Troubleshooting
 
+**Green / blank screen after load or sign-in**
+→ Set `NEXTAUTH_URL` in `.env.local` to the **same origin** you use in the browser (including port). Add the matching `http://localhost:PORT/api/auth/callback/google` redirect URI in Google Cloud. Stale cookies: clear site data for `localhost` or use a private window after changing env.
+
 **`RefreshAccessTokenError`**
 → Google Cloud: make sure the redirect URI exactly matches your Vercel URL including `https://`
 
@@ -225,6 +231,20 @@ No data migration needed for most updates. If a new release adds database column
 
 **Contacts not loading**
 → Make sure Google People API is enabled and `contacts.readonly` scope is included
+
+---
+
+## Reminder — Supabase API keys (target: next week)
+
+The project currently uses **legacy** `anon` / `service_role` JWT keys (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`). Supabase now recommends **Publishable** and **Secret** API keys (easier rotation, better security story).
+
+**Before next week ends:** plan a short upgrade:
+
+1. In Supabase **Project Settings → API Keys**, open the **Publishable and secret API keys** tab and read the current migration guidance.
+2. Create the new keys, update **`.env.local`** and **Vercel** env vars, and confirm `npm run dev` + production still connect.
+3. Only then use **Disable JWT-based API keys** (do not disable legacy keys until the app uses the new keys everywhere).
+
+See [Supabase API keys](https://supabase.com/docs/guides/api/api-keys) in the docs for the latest steps (UI names change over time).
 
 ---
 

@@ -2,21 +2,26 @@ import { getServerSession } from 'next-auth'
 import { writeContextFile } from '@/lib/context-storage'
 import { getFeatureFlags } from '@/lib/integrations'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 const DEFAULTS = {
   roadmap: '',
-  peak_hours: '9-11am, 3-5pm',
+  peak_hours: 'standard',
+  rhythm_notes: '',
   energy_default: 'medium',
   adhd_aware: false,
   adhd_patterns: [],
   known_blockers: [],
+  // COO-maintained: domain-specific terms for Deepgram keyterm prompting
+  voice_keyterms: [],
   financial_goals: [],
   relationship_tiers: {},
   // life_areas is a user-defined array: [{ key, label, emoji, blocks }]
   life_areas: [],
   weekly_time_budget: {},
   coo_notes: '',
+  relationship_seeds: '',
+  background_proposals: [],
   notification_prefs: {
     morning_brief: true,
     midday_checkin: true,
@@ -40,13 +45,18 @@ export async function GET(req) {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('user_context')
     .select('*')
     .eq('user_id', userId)
     .single()
 
-  return Response.json({ settings: { ...DEFAULTS, ...data } })
+  if (error && error.code !== 'PGRST116') {
+    console.error('settings GET user_context', error)
+    return Response.json({ error: error.message }, { status: 500 })
+  }
+
+  return Response.json({ settings: { ...DEFAULTS, ...(data || {}) } })
 }
 
 export async function POST(req) {
@@ -102,8 +112,9 @@ export async function PATCH(req) {
     ...(current || DEFAULTS),
     ...updates,
     // Arrays merge rather than replace
-    adhd_patterns: [...new Set([...(current?.adhd_patterns || []), ...(updates.adhd_patterns || [])])],
+    adhd_patterns:  [...new Set([...(current?.adhd_patterns  || []), ...(updates.adhd_patterns  || [])])],
     known_blockers: [...new Set([...(current?.known_blockers || []), ...(updates.known_blockers || [])])],
+    voice_keyterms: [...new Set([...(current?.voice_keyterms || []), ...(updates.voice_keyterms || [])])],
     updated_at: new Date().toISOString(),
   }
 

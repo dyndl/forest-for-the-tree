@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getRelationshipContacts, getUpcomingBirthdays, getOverdueContacts, updateContactLastContact } from '@/lib/google'
 import { generateRelationshipBrief } from '@/lib/coo'
 

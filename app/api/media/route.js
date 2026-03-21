@@ -1,31 +1,136 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// ── TRANSCRIBE via Whisper ───────────────────────────────────────────────────
-async function transcribeAudio(buffer, mimeType, filename) {
+// ── TRANSCRIBE ───────────────────────────────────────────────────────────────
+// Priority: user's Whisper key → app Deepgram key → app Whisper key
+// Size caps used as duration proxy (phone M4A ≈ 1–1.5 MB/min):
+//   Deepgram: 4 min → 6 MB cap
+//   Whisper:  1 min → 1.5 MB cap
+const DEEPGRAM_MAX_MB = 6    // ≈ 4 min
+const WHISPER_MAX_MB  = 1.5  // ≈ 1 min
+
+async function transcribeAudio(buffer, mimeType, filename, userId) {
+  const sizeMB = buffer.length / (1024 * 1024)
+
+  // Check if user has their own OpenAI key (Whisper addon)
+  if (userId) {
+    const { data } = await supabaseAdmin.from('user_context').select('openai_api_key').eq('user_id', userId).single()
+    if (data?.openai_api_key) {
+      if (sizeMB > WHISPER_MAX_MB) throw new Error(`Whisper clips are capped at ~1 min. Use Deepgram for up to 4 min.`)
+      return transcribeWhisper(buffer, mimeType, filename, data.openai_api_key)
+    }
+  }
+
+  // App-level Deepgram (free tier — recommended default, 4-min cap)
+  if (process.env.DEEPGRAM_API_KEY) {
+    if (sizeMB > DEEPGRAM_MAX_MB) throw new Error(`Voice clips are capped at 4 minutes. Please trim and try again.`)
+    return transcribeDeepgram(buffer, mimeType, filename, userId)
+  }
+
+  // Fallback: app-level Whisper key
+  if (process.env.OPENAI_API_KEY) {
+    if (sizeMB > WHISPER_MAX_MB) throw new Error(`Whisper clips are capped at ~1 min. Use Deepgram for up to 4 min.`)
+    return transcribeWhisper(buffer, mimeType, filename, process.env.OPENAI_API_KEY)
+  }
+
+  throw new Error('No transcription service configured')
+}
+
+// Domain-specific keyterms for Nova-3 keyterm prompting — improves accuracy
+// for vocabulary the COO and agents use constantly
+const BASE_KEYTERMS = [
+  // App brand + COO operations
+  'forest for the tree', 'forest brief', 'morning brief', 'evening retro', 'weekly retro',
+  // Tree metaphor vocabulary
+  'deep roots', 'canopy', 'seedling', 'prune', 'growing season', 'dormant', 'branch', 'forest floor',
+  // Hardware + scores
+  'Oura', 'ring score',
+  // Existing high-value terms
+  'Eisenhower matrix', 'COO', 'readiness score', 'deep work', 'focus block',
+  'cognitive load', 'life areas', 'adhd', 'hyperfocus', 'context switching',
+  'task initiation', 'decision fatigue', 'time block', 'energy level',
+]
+
+async function transcribeDeepgram(buffer, mimeType, filename, userId) {
+  // Merge base keyterms with any the COO has learned for this user
+  let userKeyterms = []
+  if (userId) {
+    const { data } = await supabaseAdmin.from('user_context').select('voice_keyterms').eq('user_id', userId).single()
+    userKeyterms = data?.voice_keyterms || []
+  }
+  const allKeyterms = [...new Set([...BASE_KEYTERMS, ...userKeyterms])]
+    .slice(0, 100) // Deepgram cap
+    .map(t => `keyterm=${encodeURIComponent(t)}`).join('&')
+
+  const params = [
+    'model=nova-3',
+    'smart_format=true',
+    'punctuate=true',
+    'utterances=true',
+    'dictation=true',   // "new line", "period" etc. format correctly
+    'numerals=true',    // "three pm" → "3pm", "five tasks" → "5 tasks"
+    'language=en',
+    allKeyterms,
+  ].join('&')
+
+  const res = await fetch(
+    `https://api.deepgram.com/v1/listen?${params}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+        'Content-Type': mimeType || 'audio/m4a',
+      },
+      body: buffer,
+    }
+  )
+
+  if (!res.ok) throw new Error(`Deepgram error: ${await res.text()}`)
+
+  const json = await res.json()
+  const channel = json.results?.channels?.[0]?.alternatives?.[0]
+  const words = channel?.words || []
+
+  // Normalise to same shape as Whisper verbose_json
+  return {
+    text: channel?.transcript || '',
+    duration: json.metadata?.duration || 0,
+    segments: words.reduce((segs, w) => {
+      const last = segs[segs.length - 1]
+      if (last && w.start - last.end < 1.5) {
+        last.text += ' ' + w.word
+        last.end = w.end
+      } else {
+        segs.push({ start: Math.round(w.start), end: Math.round(w.end), text: w.word })
+      }
+      return segs
+    }, []),
+    provider: 'deepgram',
+  }
+}
+
+async function transcribeWhisper(buffer, mimeType, filename, apiKey) {
   const formData = new FormData()
   const blob = new Blob([buffer], { type: mimeType })
   formData.append('file', blob, filename || 'audio.m4a')
   formData.append('model', 'whisper-1')
-  formData.append('response_format', 'verbose_json') // includes segments + timestamps
+  formData.append('response_format', 'verbose_json')
   formData.append('language', 'en')
 
   const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
   })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Whisper error: ${err}`)
-  }
+  if (!res.ok) throw new Error(`Whisper error: ${await res.text()}`)
 
-  return res.json()
+  const json = await res.json()
+  return { ...json, provider: 'whisper' }
 }
 
 // ── ANALYZE IMAGE via Claude ─────────────────────────────────────────────────
@@ -108,7 +213,7 @@ export async function POST(req) {
   try {
     if (isAudio) {
       // Transcribe with Whisper
-      const whisperResult = await transcribeAudio(buffer, mimeType, filename)
+      const whisperResult = await transcribeAudio(buffer, mimeType, filename, userId)
       result.transcript = whisperResult.text || ''
       result.duration_seconds = Math.round(whisperResult.duration || 0)
       result.segments = whisperResult.segments?.map(s => ({

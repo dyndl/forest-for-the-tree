@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export const authOptions = {
   providers: [
@@ -28,17 +28,22 @@ export const authOptions = {
       if (account) {
         token.accessToken = account.access_token
         token.refreshToken = account.refresh_token
-        token.accessTokenExpires = account.expires_at * 1000
+        token.accessTokenExpires =
+          account.expires_at != null ? account.expires_at * 1000 : Date.now() + 3600 * 1000
 
-        // Store tokens in Supabase so cron job can use them
+        // Store tokens in Supabase so cron job can use them (never fail sign-in if DB errors)
         if (token.email) {
-          await supabaseAdmin.from('user_tokens').upsert({
-            user_id: token.email,
-            access_token: account.access_token,
-            refresh_token: account.refresh_token,
-            expires_at: account.expires_at,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id' })
+          try {
+            await supabaseAdmin.from('user_tokens').upsert({
+              user_id: token.email,
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+              expires_at: account.expires_at,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id' })
+          } catch (e) {
+            console.error('user_tokens upsert', e)
+          }
         }
       }
       if (Date.now() < token.accessTokenExpires) return token
@@ -51,7 +56,6 @@ export const authOptions = {
       return session
     },
   },
-  pages: { signIn: '/auth/signin' },
   secret: process.env.NEXTAUTH_SECRET,
 }
 
@@ -67,13 +71,16 @@ async function refreshAccessToken(token) {
     const data = await res.json()
     if (!res.ok) throw data
 
-    // Keep Supabase tokens fresh
     if (token.email) {
-      await supabaseAdmin.from('user_tokens').update({
-        access_token: data.access_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-        updated_at: new Date().toISOString(),
-      }).eq('user_id', token.email)
+      try {
+        await supabaseAdmin.from('user_tokens').update({
+          access_token: data.access_token,
+          expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', token.email)
+      } catch (e) {
+        console.error('user_tokens refresh update', e)
+      }
     }
 
     return {

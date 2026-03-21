@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { readContextFile, buildContextMarkdown } from '@/lib/context-storage'
 import { getFeatureFlags } from '@/lib/integrations'
 

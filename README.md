@@ -96,6 +96,8 @@ SUPABASE_SERVICE_ROLE_KEY
 CRON_SECRET
 ```
 
+**Ops note:** migrate off legacy Supabase JWT keys to **Publishable / Secret** keys soon — see **Reminder — Supabase API keys** in [SETUP.md](./SETUP.md).
+
 ---
 
 ## Onboarding

@@ -167,10 +167,38 @@ create policy "users own relationship_briefs" on relationship_briefs for all usi
 create policy "users own connectors" on connectors for all using (user_id = current_user);
 create policy "users own user_context" on user_context for all using (user_id = current_user);
 
+-- Onboarding fields (app uses these — must exist before finish() can save)
+alter table user_context add column if not exists integration_tier text default 'google';
+alter table user_context add column if not exists addons jsonb default '[]'::jsonb;
+alter table user_context add column if not exists outline text default '';
+alter table user_context add column if not exists life_areas jsonb default '[]'::jsonb;
+alter table user_context add column if not exists adhd_aware boolean default false;
+alter table user_context add column if not exists onboarding_complete boolean default false;
+alter table user_context add column if not exists notification_prefs jsonb default '{
+  "morning_brief": true,
+  "midday_checkin": true,
+  "afternoon_checkin": true,
+  "evening_retro": true,
+  "urgent_alerts": true,
+  "weekly_review": true,
+  "birthday_alerts": true
+}'::jsonb;
+
+-- OpenAI key for Whisper (user-supplied, optional)
+alter table user_context add column if not exists openai_api_key text default null;
+
+-- Rhythm notes — free-form energy/schedule context for COO adaptation
+alter table user_context add column if not exists rhythm_notes text default '';
+
 -- Life tree background preferences (see /api/tree + settings)
 alter table user_context add column if not exists tree_bg_mode text default 'sticky';
 alter table user_context add column if not exists tree_favorites_by_tier jsonb default '{}'::jsonb;
 alter table user_context add column if not exists tree_gallery_by_slug jsonb default '{}'::jsonb;
+alter table user_context add column if not exists voice_keyterms jsonb default '[]'::jsonb;
+
+-- COO onboarding boot: approved background proposals + relationship seed names
+alter table user_context add column if not exists background_proposals jsonb default '[]'::jsonb;
+alter table user_context add column if not exists relationship_seeds text default '';
 
 -- MEDIA UPLOADS (voice memos, images, files)
 create table if not exists media_uploads (
@@ -407,6 +435,15 @@ insert into tree_species_catalog values
   (66, 'Banyan',          '🌳', 'banyan',           6, 'Titans',          500,    80,  'Great Banyan covers 3.5 acres.',                                      'Gandhi/Buddha'),
   (69, 'World Tree',      '🌍', 'world-tree',       6, 'Titans',          999,   999,  'Yggdrasil: the cosmic tree connecting nine worlds.',                  'Humanity')
 on conflict (tier) do nothing;
+
+-- Reference data only (no per-user rows). RLS on + world-readable SELECT satisfies Supabase advisor.
+alter table tree_species_catalog enable row level security;
+drop policy if exists "tree_species_catalog_read" on tree_species_catalog;
+create policy "tree_species_catalog_read"
+  on tree_species_catalog
+  for select
+  to anon, authenticated
+  using (true);
 
 -- When current_tier changes (or row is created), copy display fields from the catalog tier
 -- that best matches: greatest catalog.tier <= user tier (handles sparse tier rows).

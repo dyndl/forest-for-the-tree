@@ -39,11 +39,11 @@ function MatrixCanvas({tasks,onToggle}){
     const dpr=window.devicePixelRatio||1;const W=canvas.parentElement.clientWidth-24;const H=250
     canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px'
     const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,W,H)
-    ;[['rgba(184,92,0,.05)',W/2,0,W/2,H/2],['rgba(26,95,168,.04)',0,0,W/2,H/2],['rgba(15,110,86,.04)',W/2,H/2,W/2,H/2],['rgba(122,170,138,.03)',0,H/2,W/2,H/2]].forEach(([c,x,y,w,h])=>{ctx.fillStyle=c;ctx.fillRect(x,y,w,h)})
+    ;[['rgba(184,92,0,.13)',W/2,0,W/2,H/2],['rgba(26,95,168,.10)',0,0,W/2,H/2],['rgba(15,110,86,.10)',W/2,H/2,W/2,H/2],['rgba(122,170,138,.08)',0,H/2,W/2,H/2]].forEach(([c,x,y,w,h])=>{ctx.fillStyle=c;ctx.fillRect(x,y,w,h)})
     ctx.strokeStyle='rgba(20,60,35,.1)';ctx.lineWidth=1;ctx.setLineDash([3,6]);ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();ctx.setLineDash([])
     ctx.font='8px JetBrains Mono,monospace';ctx.fillStyle='rgba(20,60,35,.26)';ctx.textAlign='center';ctx.fillText('IMPORTANT →',W/2,H-5)
     ctx.save();ctx.translate(10,H/2);ctx.rotate(-Math.PI/2);ctx.fillText('URGENT →',0,0);ctx.restore()
-    ;[['DO',W*.76,16,'rgba(184,92,0,.5)'],['SCHEDULE',W*.26,16,'rgba(26,95,168,.46)'],['DELEGATE',W*.76,H/2+15,'rgba(15,110,86,.46)'],['ELIMINATE',W*.26,H/2+15,'rgba(122,170,138,.46)']].forEach(([t,x,y,c])=>{ctx.font='500 8px JetBrains Mono,monospace';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText(t,x,y)})
+    ;[['DO',W*.76,16,'rgba(184,92,0,.9)'],['SCHEDULE',W*.26,16,'rgba(26,95,168,.85)'],['DELEGATE',W*.76,H/2+15,'rgba(15,110,86,.85)'],['ELIMINATE',W*.26,H/2+15,'rgba(122,170,138,.85)']].forEach(([t,x,y,c])=>{ctx.font='700 8px JetBrains Mono,monospace';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText(t,x,y)})
     mapRef.current=[];const placed=[]
     tasks.forEach(t=>{
       const base=Q_POS[t.q]||Q_POS.do;const r=Math.max(8,Math.min(26,t.blocks*4))
@@ -51,7 +51,7 @@ function MatrixCanvas({tasks,onToggle}){
       do{ox=(Math.random()-.5)*sp;oy=(Math.random()-.5)*sp;att++}while(att<30&&placed.some(p=>Math.hypot(p[0]-(bx+ox),p[1]-(by+oy))<r+p[2]+5))
       bx=Math.max(r+18,Math.min(W-r-18,bx+ox));by=Math.max(r+18,Math.min(H-r-18,by+oy));placed.push([bx,by,r])
       const col=CAT_COLORS[t.cat]||'#3d7a52'
-      ctx.beginPath();ctx.arc(bx,by,r,0,Math.PI*2);ctx.fillStyle=t.done?'rgba(20,60,35,.05)':col+'1a';ctx.fill()
+      ctx.beginPath();ctx.arc(bx,by,r,0,Math.PI*2);ctx.fillStyle=t.done?'rgba(20,60,35,.05)':col+'40';ctx.fill()
       ctx.strokeStyle=t.done?'rgba(20,60,35,.18)':col;ctx.lineWidth=t.done?1:1.8;ctx.stroke()
       ctx.font=(t.done?'400 ':'500 ')+Math.max(8,r*.55)+'px JetBrains Mono,monospace'
       ctx.fillStyle=t.done?'rgba(20,60,35,.26)':col;ctx.textAlign='center';ctx.textBaseline='middle'
@@ -139,16 +139,17 @@ export default function App(){
   // Initial load + onboarding redirect
   useEffect(()=>{
     if(status!=='authenticated')return
-    Promise.all([
-      api.tasks.list().then(r=>r.tasks&&setTasks(r.tasks)),
-      api.schedule.get().then(r=>r.schedule&&setSchedule(r.schedule)),
-      api.agents.list().then(r=>r.agents&&setAgents(r.agents)),
-      api.settings.get().then(r=>{
-        setSettings(r.settings)
-        if(r.settings&&!r.settings.onboarding_complete){router.push('/onboarding')}
-      }),
-      api.oura.get().then(r=>setOura(r)),
-    ])
+    api.settings.get().then(r=>{
+      const s = r?.settings
+      setSettings(s ?? null)
+      if (!s || !s.onboarding_complete) { router.push('/onboarding'); return }
+      Promise.all([
+        api.tasks.list().then(r=>r.tasks&&setTasks(r.tasks)),
+        api.schedule.get().then(r=>r.schedule&&setSchedule(r.schedule)),
+        api.agents.list().then(r=>r.agents&&setAgents(r.agents)),
+        api.oura.get().then(r=>setOura(r)),
+      ])
+    })
     // Schedule check-ins
     const h=new Date().getHours()
     if(h>=12&&h<13)setTimeout(()=>setCheckin('midday'),4000)
@@ -214,11 +215,12 @@ export default function App(){
   if(status==='loading')return(<><div style={{position:'fixed',inset:0,background:'linear-gradient(162deg,#cce8d5 0%,#a8d9b8 18%,#7bbf98 48%,#4a9e6b 72%,#2d5a3d 100%)',zIndex:0}}/><TreeSVG/><div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:20}}><div style={{width:24,height:24,border:'3px solid rgba(122,170,138,0.3)',borderTopColor:'#2d7a52',borderRadius:'50%',animation:'spin .7s linear infinite'}}/></div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></>)
 
   if(status==='unauthenticated')return(
-    <><div style={{position:'fixed',inset:0,background:'linear-gradient(162deg,#cce8d5 0%,#a8d9b8 18%,#7bbf98 48%,#4a9e6b 72%,#2d5a3d 100%)',zIndex:0}}/><TreeSVG/>
-    <div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:20,padding:16}}>
-      <div style={{background:'rgba(255,255,255,.9)',backdropFilter:'blur(24px)',borderRadius:20,padding:'32px 28px',maxWidth:320,width:'100%',textAlign:'center',border:'1px solid rgba(255,255,255,.9)',boxShadow:'0 20px 60px rgba(20,60,35,.2)'}}>
+    <><div style={{position:'fixed',inset:0,background:'linear-gradient(162deg,#cce8d5 0%,#a8d9b8 18%,#7bbf98 48%,#4a9e6b 72%,#2d5a3d 100%)',zIndex:0}}/>
+    <img src="/FFTT.jpg" alt="" style={{position:'fixed',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.8,zIndex:1,pointerEvents:'none'}}/>
+    <div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16}}>
+      <div style={{background:'#fff',borderRadius:20,padding:'32px 28px',maxWidth:320,width:'100%',textAlign:'center',border:'1px solid rgba(255,255,255,.9)',boxShadow:'0 20px 60px rgba(20,60,35,.35)'}}>
         <div style={{fontSize:36,marginBottom:8}}>🌲</div>
-        <div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:24,color:'#182e22',marginBottom:4,fontStyle:'italic'}}>Forest for the Trees</div>
+        <div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:24,color:'#182e22',marginBottom:4,fontStyle:'italic'}}>Forest for the Tree</div>
         <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:8.5,color:'#7aaa8a',letterSpacing:'.12em',textTransform:'uppercase',marginBottom:20}}>Life OS · v2</div>
         <p style={{fontSize:12.5,color:'#3a5c47',marginBottom:20,lineHeight:1.65}}>Your autonomous COO reads Calendar, Gmail, and Tasks — then builds and manages your day, ADHD-aware.</p>
         <button onClick={()=>signIn('google')}style={{width:'100%',background:'#1a5a3c',color:'#fff',border:'none',borderRadius:8,padding:'11px 0',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'Figtree,sans-serif'}}>Continue with Google</button>
@@ -248,7 +250,7 @@ export default function App(){
       {/* SIDEBAR */}
       <nav style={{width:196,flexShrink:0,background:'var(--glass)',backdropFilter:'blur(22px)',WebkitBackdropFilter:'blur(22px)',borderRight:'1px solid var(--gb)',display:'flex',flexDirection:'column'}}>
         <div style={{padding:'16px 15px 11px',borderBottom:'1px solid var(--gb2)'}}>
-          <div style={{fontFamily:'var(--s)',fontSize:16,color:'var(--txt)',fontStyle:'italic',lineHeight:1.2}}>Forest for the Trees</div>
+          <div style={{fontFamily:'var(--s)',fontSize:16,color:'var(--txt)',fontStyle:'italic',lineHeight:1.2}}>Forest for the Tree</div>
           <div style={{fontFamily:'var(--m)',fontSize:'8px',color:'var(--txt3)',letterSpacing:'.12em',textTransform:'uppercase',marginTop:2}}>Life OS · v2</div>
         </div>
         {/* COO + Oura status */}

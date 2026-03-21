@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 /** Public species catalog for Life tree settings (no user data). */
 export async function GET() {

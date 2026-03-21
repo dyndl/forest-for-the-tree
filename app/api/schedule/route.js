@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateMorningBriefWithOura, assessVetoImpact } from '@/lib/coo'
 import { getTodayEvents, getImportantEmails } from '@/lib/google'
 import { getOuraMorningContext } from '@/lib/oura'

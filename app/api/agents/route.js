@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { runAgentBrief } from '@/lib/coo'
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }

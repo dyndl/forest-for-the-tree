@@ -1,8 +1,9 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
-const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'relationships', 'done']
+const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'whisper', 'relationships', 'done']
+const ADDON_STEPS = { oura: 'oura', whisper: 'whisper' } // deepgram has no setup step — app holds the key
 
 // ── Suggested life area starting points (user can edit/remove/add freely) ────
 const AREA_SUGGESTIONS = [
@@ -46,9 +47,20 @@ const INTEGRATION_TIERS = [
   },
 ]
 
-const ADDON_OPTIONS = [
-  { id: 'oura',   label: 'Oura Ring',      icon: '💍', cost: 'Free w/ Oura membership', desc: 'Readiness + sleep scores shape your daily cognitive load.' },
-  { id: 'whisper', label: 'Voice memos',   icon: '🎙️', cost: '~$0.006/min',             desc: 'Transcribe voice notes via OpenAI Whisper.' },
+const ADDON_CATEGORIES = [
+  {
+    label: 'Fitness',
+    addons: [
+      { id: 'oura',     icon: '💍', label: 'Oura Ring',        cost: 'Free w/ membership', desc: 'Readiness, sleep, and stress scores shape how your COO schedules each day.' },
+    ],
+  },
+  {
+    label: 'Voice',
+    addons: [
+      { id: 'deepgram', icon: '🎙️', label: 'Voice memos',      cost: 'Included free', recommended: true, desc: 'Capture thoughts by voice — up to 4 min per clip. Transcribed via Deepgram Nova-3, piped to your agents.' },
+      { id: 'whisper',  icon: '🔊', label: 'Whisper (OpenAI)', cost: 'Your OpenAI key',               desc: 'Already on OpenAI? Use your own key. Clips capped at 1 min.' },
+    ],
+  },
 ]
 
 
@@ -162,7 +174,7 @@ function WelcomeStep({ data, onChange, onNext }) {
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>🌲</div>
         <h1 style={{ ...serif, fontSize: 26, color: '#182e22', marginBottom: 6, fontStyle: 'italic' }}>
-          Forest for the Trees
+          Forest for the Tree
         </h1>
         <p style={{ ...mono, fontSize: 9, color: '#7aaa8a', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
           Your autonomous life COO
@@ -200,25 +212,39 @@ function WelcomeStep({ data, onChange, onNext }) {
 
       <div style={{ marginBottom: 20 }}>
         <label style={label9}>Optional add-ons</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
-          {ADDON_OPTIONS.map(a => (
-            <button key={a.id} onClick={() => toggleAddon(a.id)} style={{
-              textAlign: 'left', padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
-              border: `1.5px solid ${addons.includes(a.id) ? '#0f6e56' : 'rgba(122,170,138,0.2)'}`,
-              background: addons.includes(a.id) ? 'rgba(15,110,86,0.06)' : 'transparent',
-              transition: 'all .15s',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 15 }}>{a.icon}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
-                  {a.label}
-                </span>
-                <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', marginLeft: 'auto' }}>{a.cost}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
+          {ADDON_CATEGORIES.map(cat => (
+            <div key={cat.label}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: '#7aaa8a', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace', marginBottom: 5 }}>
+                {cat.label}
               </div>
-              <p style={{ fontSize: 11, color: '#7aaa8a', margin: '3px 0 0 23px', lineHeight: 1.4, fontFamily: 'Figtree, sans-serif' }}>
-                {a.desc}
-              </p>
-            </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {cat.addons.map(a => (
+                  <button key={a.id} onClick={() => toggleAddon(a.id)} style={{
+                    textAlign: 'left', padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
+                    border: `1.5px solid ${addons.includes(a.id) ? '#0f6e56' : 'rgba(122,170,138,0.2)'}`,
+                    background: addons.includes(a.id) ? 'rgba(15,110,86,0.06)' : 'transparent',
+                    transition: 'all .15s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15 }}>{a.icon}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
+                        {a.label}
+                      </span>
+                      {a.recommended && (
+                        <span style={{ fontSize: 8, fontWeight: 700, color: '#2d7a52', background: 'rgba(45,122,82,0.1)', borderRadius: 4, padding: '1px 5px', fontFamily: 'Figtree, sans-serif', letterSpacing: '0.04em' }}>
+                          RECOMMENDED
+                        </span>
+                      )}
+                      <span style={{ ...mono, fontSize: 9, color: a.cost === 'Included free' ? '#2d7a52' : '#7aaa8a', marginLeft: 'auto' }}>{a.cost}</span>
+                    </div>
+                    <p style={{ fontSize: 11, color: '#7aaa8a', margin: '3px 0 0 23px', lineHeight: 1.4, fontFamily: 'Figtree, sans-serif' }}>
+                      {a.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -247,22 +273,43 @@ function RoadmapStep({ data, onChange, onNext, onBack }) {
           onChange={e => onChange('roadmap', e.target.value)}
           placeholder="e.g. Ship v1 of my app, get to 10k monthly revenue, run a 5k…"
         />
+        <p style={{ fontSize: 11, color: '#7aaa8a', marginTop: 6, lineHeight: 1.5, fontFamily: 'Figtree, sans-serif' }}>
+          Don't worry about getting this perfect — you can update your goals and add more detail any time from your profile.
+        </p>
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={label9}>Best focus hours</label>
-        <select
-          style={inputStyle}
-          value={data.peak_hours}
-          onChange={e => onChange('peak_hours', e.target.value)}
-        >
-          <option value="6-8am, 12-2pm">Early bird — 6–8am and 12–2pm</option>
-          <option value="8-10am, 2-4pm">8–10am and 2–4pm</option>
-          <option value="9-11am, 3-5pm">9–11am and 3–5pm</option>
-          <option value="10am-12pm, 4-6pm">Late starter — 10am–12pm and 4–6pm</option>
-          <option value="1-3pm, 8-10pm">Afternoon/evening — 1–3pm and 8–10pm</option>
-          <option value="custom">Custom (set after setup in Settings)</option>
-        </select>
+        <label style={label9}>Energy profile — rough starting point</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, marginBottom: 8 }}>
+          {[
+            { value: 'early',    label: '🌅 Early bird',     sub: 'Best before 10am' },
+            { value: 'standard', label: '☀️ Standard',        sub: 'Best 9am–12pm' },
+            { value: 'late',     label: '🌇 Late starter',    sub: 'Warms up after 10am' },
+            { value: 'variable', label: '🌀 Variable',         sub: 'Day to day' },
+          ].map(({ value, label, sub }) => {
+            const sel = (data.peak_hours || 'standard') === value
+            return (
+              <button key={value} onClick={() => onChange('peak_hours', value)} style={{
+                flex: '1 1 44%', textAlign: 'left', padding: '9px 12px', borderRadius: 8, cursor: 'pointer',
+                border: `1.5px solid ${sel ? '#1a5a3c' : 'rgba(122,170,138,0.25)'}`,
+                background: sel ? 'rgba(26,90,60,0.07)' : 'transparent', transition: 'all .15s',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>{label}</div>
+                <div style={{ fontSize: 10, color: '#7aaa8a', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>{sub}</div>
+              </button>
+            )
+          })}
+        </div>
+        <textarea
+          style={{ ...inputStyle, resize: 'none' }}
+          rows={2}
+          value={data.rhythm_notes || ''}
+          onChange={e => onChange('rhythm_notes', e.target.value)}
+          placeholder="Anything else about your rhythm? e.g. need 30 min to wake up, crash after lunch, work in bursts…"
+        />
+        <div style={{ fontSize: 10, color: '#9abba8', lineHeight: 1.5, marginTop: 6, fontFamily: 'JetBrains Mono, monospace' }}>
+          The COO uses this as a starting point and refines it through your daily check-ins and actions.
+        </div>
       </div>
 
       <button style={btnPrimary} onClick={onNext}>Continue →</button>
@@ -397,37 +444,90 @@ function AreasStep({ data, onChange, onNext, onBack }) {
 }
 
 
+const AGENT_QUIPS = [
+  'Reading between the lines…',
+  'Mapping your goals to the forest…',
+  'Assembling your team of agents…',
+  'Cross-referencing your patterns…',
+  'Calibrating your COO…',
+  'Thinking like your best self…',
+  'Connecting the dots…',
+  'Planting the seeds…',
+  'Building your operating system…',
+  'Almost there — good things take a moment…',
+]
+
 // ══ STEP 4: OUTLINE — write or upload ══════════════════════════════════════════
 function OutlineStep({ data, onChange, onNext, onBack }) {
-  const [uploading, setUploading] = useState(false)
+  const [attachments, setAttachments] = useState([]) // { id, name, status: 'extracting'|'done'|'error', text?, errorMsg? }
   const [generating, setGenerating] = useState(false)
+  const [quipIdx, setQuipIdx] = useState(0)
   const [error, setError] = useState('')
   const [previewAgents, setPreviewAgents] = useState(null)
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true); setError('')
+  useEffect(() => {
+    if (!generating) return
+    setQuipIdx(0)
+    const t = setInterval(() => setQuipIdx(i => (i + 1) % AGENT_QUIPS.length), 2800)
+    return () => clearInterval(t)
+  }, [generating])
+
+  const anyExtracting = attachments.some(a => a.status === 'extracting')
+  const allDone = attachments.length > 0 && !anyExtracting
+  const doneCount = attachments.filter(a => a.status === 'done').length
+
+  function getFullContext() {
+    const parts = [
+      data.outline,
+      ...attachments.filter(a => a.status === 'done').map(a => a.text),
+    ].filter(Boolean)
+    return parts.join('\n\n---\n\n')
+  }
+
+  const MAX_FILES = 5
+
+  function handleFileSelect(e) {
+    const selected = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!selected.length) return
+    const remaining = MAX_FILES - attachments.length
+    if (remaining <= 0) { setError(`Maximum ${MAX_FILES} files — remove one to add more`); return }
+    const files = selected.slice(0, remaining)
+    if (files.length < selected.length) setError(`Added ${files.length} of ${selected.length} — limit is ${MAX_FILES} files total`)
+    else setError('')
+    const newAttachments = files.map(file => ({
+      id: Math.random().toString(36).slice(2) + Date.now(),
+      name: file.name,
+      status: 'extracting',
+    }))
+    setAttachments(prev => [...prev, ...newAttachments])
+    files.forEach((file, i) => extractFile(file, newAttachments[i].id))
+  }
+
+  async function extractFile(file, id) {
     try {
       const fd = new FormData()
       fd.append('file', file)
       const res = await fetch('/api/onboarding/extract-outline', { method: 'POST', body: fd })
       const json = await res.json()
-      if (!res.ok) { setError(json.error || 'Upload failed'); return }
-      onChange('outline', json.text)
-    } catch { setError('Upload failed — check your connection') }
-    finally { setUploading(false) }
+      if (!res.ok) throw new Error(json.error || 'Upload failed')
+      setAttachments(prev => prev.map(a => a.id === id ? { ...a, status: 'done', text: json.text } : a))
+    } catch (err) {
+      setAttachments(prev => prev.map(a => a.id === id ? { ...a, status: 'error', errorMsg: err.message } : a))
+    }
   }
 
   async function generatePreview() {
-    if (!data.outline?.trim()) { setError('Add some context first'); return }
+    const context = getFullContext()
+    if (!context.trim()) { setError('Add some context first'); return }
+    onChange('outline', context)
     setGenerating(true); setError('')
     try {
       const res = await fetch('/api/onboarding/generate-agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          outline: data.outline,
+          outline: context,
           life_areas: data.life_areas || [],
           roadmap: data.roadmap || '',
         }),
@@ -451,13 +551,42 @@ function OutlineStep({ data, onChange, onNext, onBack }) {
     )
   }
 
+  if (generating) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 320, gap: 28 }}>
+        {/* Progress ring */}
+        <svg width={64} height={64} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={32} cy={32} r={26} fill="none" stroke="rgba(122,170,138,0.18)" strokeWidth={4} />
+          <circle
+            cx={32} cy={32} r={26} fill="none"
+            stroke="#2d7a52" strokeWidth={4}
+            strokeDasharray="163.4" strokeDashoffset="40"
+            strokeLinecap="round"
+            style={{ animation: 'spin 1.4s linear infinite', transformOrigin: '32px 32px' }}
+          />
+        </svg>
+        {/* Rotating quip */}
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ ...serif, fontSize: 17, color: '#182e22', fontStyle: 'italic', marginBottom: 6, transition: 'opacity .3s' }}>
+            {AGENT_QUIPS[quipIdx]}
+          </p>
+          <p style={{ fontSize: 11, color: '#7aaa8a', fontFamily: 'JetBrains Mono, monospace' }}>
+            building your agents
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const hasContext = !!(data.outline?.trim() || doneCount > 0)
+
   return (
     <div>
       <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic' }}>
         Tell the COO about your life
       </h2>
       <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6 }}>
-        Write a free-form outline or drop a file. The more context you give, the more personalised your agents will be. You can include goals, patterns, constraints, projects — anything relevant.
+        Write a free-form outline or drop files — or both. The more context you give, the more personalised your agents will be.
       </p>
 
       <div style={{ marginBottom: 10 }}>
@@ -475,17 +604,80 @@ I want to get to 10 paying customers in 4 weeks. I also want to run 3x a week an
         />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      {/* File upload button */}
+      <div style={{ marginBottom: attachments.length ? 10 : 14, display: 'flex', alignItems: 'center', gap: 10 }}>
         <label style={{
-          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: 6, padding: '8px 0', borderRadius: 8, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '7px 14px', borderRadius: 8,
+          cursor: attachments.length >= MAX_FILES ? 'not-allowed' : 'pointer',
           border: '1px dashed rgba(122,170,138,0.4)', fontSize: 12, color: '#7aaa8a',
           fontFamily: 'Figtree, sans-serif', background: 'rgba(45,122,82,0.03)',
+          opacity: attachments.length >= MAX_FILES ? 0.4 : 1,
         }}>
-          {uploading ? 'Extracting…' : '📄 Drop or upload .txt / .md / .pdf'}
-          <input type="file" accept=".txt,.md,.pdf" style={{ display: 'none' }} onChange={handleFile} disabled={uploading} />
+          📎 Attach files
+          <input type="file" multiple accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.gif,image/*" style={{ display: 'none' }} onChange={handleFileSelect} disabled={attachments.length >= MAX_FILES} />
         </label>
+        <span style={{ fontSize: 10, color: 'rgba(122,170,138,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+          {attachments.length > 0 ? `${attachments.length} / ${MAX_FILES} files` : `up to ${MAX_FILES} · .txt .md .pdf image`}
+        </span>
       </div>
+
+      {/* Attachment list */}
+      {attachments.length > 0 && (
+        <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {attachments.map(a => (
+            <div key={a.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '7px 12px', borderRadius: 8,
+              background: a.status === 'error' ? 'rgba(138,40,40,0.06)' : 'rgba(45,90,61,0.06)',
+              border: `1px solid ${a.status === 'error' ? 'rgba(138,40,40,0.15)' : 'rgba(122,170,138,0.2)'}`,
+            }}>
+              {/* Status indicator */}
+              {a.status === 'extracting' && <div className="spin" style={{ flexShrink: 0 }} />}
+              {a.status === 'done' && (
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#2d7a52', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width={8} height={6} viewBox="0 0 8 6" fill="none">
+                    <path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              )}
+              {a.status === 'error' && (
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#8a2828', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 9, color: '#fff', fontWeight: 700 }}>!</div>
+              )}
+              <span style={{ fontSize: 12, color: '#2d4a35', fontFamily: 'Figtree, sans-serif', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {a.name}
+              </span>
+              <span style={{ fontSize: 10, color: '#7aaa8a', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 }}>
+                {a.status === 'extracting' ? 'reading…' : a.status === 'done' ? 'ready' : a.errorMsg || 'failed'}
+              </span>
+              <button
+                onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'rgba(122,170,138,0.5)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}
+                title="Remove"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* "All done" banner */}
+      {allDone && doneCount > 0 && !generating && (
+        <div style={{
+          marginBottom: 14, padding: '12px 16px', borderRadius: 10,
+          background: 'rgba(45,90,61,0.08)', border: '1px solid rgba(45,122,61,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <span style={{ fontSize: 12, color: '#2d4a35', fontFamily: 'Figtree, sans-serif' }}>
+            {doneCount === 1 ? '1 file processed' : `${doneCount} files processed`} — ready to build your agents?
+          </span>
+          <button
+            style={{ ...btnPrimary, padding: '6px 14px', fontSize: 12, marginBottom: 0, whiteSpace: 'nowrap' }}
+            onClick={generatePreview}
+          >
+            Build agents →
+          </button>
+        </div>
+      )}
 
       {error && (
         <div style={{ fontSize: 11, color: '#8a2828', marginBottom: 10, fontFamily: 'JetBrains Mono, monospace' }}>
@@ -493,13 +685,16 @@ I want to get to 10 paying customers in 4 weeks. I also want to run 3x a week an
         </div>
       )}
 
-      <button
-        style={{ ...btnPrimary, opacity: (!data.outline?.trim() || generating) ? 0.5 : 1 }}
-        onClick={generatePreview}
-        disabled={!data.outline?.trim() || generating}
-      >
-        {generating ? 'Generating your agents…' : 'Preview my agents →'}
-      </button>
+      {/* Primary CTA — shown when not waiting on all-done banner */}
+      {(!allDone || doneCount === 0) && (
+        <button
+          style={{ ...btnPrimary, opacity: (!hasContext || generating) ? 0.5 : 1 }}
+          onClick={generatePreview}
+          disabled={!hasContext || generating || anyExtracting}
+        >
+          {anyExtracting ? 'Extracting files…' : 'Preview my agents →'}
+        </button>
+      )}
       <button style={btnGhost} onClick={onNext}>Skip — I'll set up agents later</button>
       <button style={btnGhost} onClick={onBack}>Back</button>
     </div>
@@ -519,25 +714,32 @@ function AgentPreview({ agents, onEdit, onConfirm, onBack }) {
         Generated from your outline. Remove any that don't fit — you can add more later.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: agents.length > 2 ? 'repeat(2, 1fr)' : '1fr',
+        gap: 8,
+        maxHeight: 380,
+        overflowY: 'auto',
+        marginBottom: 16,
+        paddingRight: 2,
+      }}>
         {agents.map(a => (
           <div key={a.id} style={{
             padding: '10px 12px', background: 'rgba(45,122,82,0.05)',
             border: '1px solid rgba(122,170,138,0.2)', borderRadius: 10,
-            position: 'relative',
+            display: 'flex', flexDirection: 'column', gap: 4,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 18 }}>{a.icon}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{a.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#182e22', fontFamily: 'Figtree, sans-serif', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.name}
               </span>
-              <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', marginLeft: 2 }}>{a.area}</span>
               <button onClick={() => remove(a.id)} style={{
-                marginLeft: 'auto', border: 'none', background: 'transparent',
+                border: 'none', background: 'transparent', flexShrink: 0,
                 color: 'rgba(122,170,138,0.5)', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1,
               }}>×</button>
             </div>
-            <p style={{ fontSize: 11, color: '#5a7a68', lineHeight: 1.5, margin: '0 0 4px 0', fontFamily: 'Figtree, sans-serif' }}>
+            <p style={{ fontSize: 10, color: '#5a7a68', lineHeight: 1.5, margin: 0, fontFamily: 'Figtree, sans-serif' }}>
               {a.prompt}
             </p>
             {a.rationale && (
@@ -662,27 +864,19 @@ function ScheduleStep({ data, onChange, onNext, onBack }) {
 }
 
 // ══ STEP 5: OURA ══════════════════════════════════════════════════════════════
-function OuraStep({ onNext, onBack, onSkip }) {
-  const [token, setToken]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult]  = useState(null)
-  const [error, setError]    = useState('')
+function OuraStep({ onNext, onBack, onSkip, initialStatus }) {
+  // initialStatus comes from ?oura= URL param after OAuth redirect
+  const [status, setStatus] = useState(initialStatus || null) // null | 'connected' | 'denied' | 'error'
+  const [ouraData, setOuraData] = useState(null)
 
-  async function connect() {
-    if (!token.trim()) return
-    setLoading(true); setError('')
-    try {
-      const res  = await fetch('/api/oura', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Connection failed'); setLoading(false); return }
-      setResult(data)
-    } catch { setError('Network error — check your connection') }
-    setLoading(false)
-  }
+  // If we just came back from OAuth, fetch the stored data
+  useEffect(() => {
+    if (initialStatus === 'connected') {
+      fetch('/api/oura').then(r => r.json()).then(d => {
+        if (d.connected && d.data) setOuraData(d.data)
+      }).catch(() => {})
+    }
+  }, [initialStatus])
 
   return (
     <div>
@@ -691,59 +885,140 @@ function OuraStep({ onNext, onBack, onSkip }) {
         Connect your Oura Ring
       </h2>
       <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6, textAlign: 'center' }}>
-        Optional. Your readiness score lets the COO protect your energy on low days and push you on strong ones.
+        Optional. Your readiness score lets the COO protect your energy on low days and push harder on strong ones.
       </p>
 
-      {!result ? (
+      {status !== 'connected' ? (
+        <>
+          {/* What you get */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+            {[
+              ['Readiness score', 'COO protects your energy on low days'],
+              ['Sleep quality',   'Adjust cognitive load based on last night'],
+              ['Activity data',   'Factor movement into your scheduling'],
+            ].map(([label, desc]) => (
+              <div key={label} style={{ display: 'flex', gap: 10, padding: '8px 12px', background: 'rgba(45,122,82,0.05)', borderRadius: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#2d4a35', fontFamily: 'Figtree, sans-serif', width: 100, flexShrink: 0 }}>{label}</span>
+                <span style={{ fontSize: 11, color: '#5a7a68', fontFamily: 'Figtree, sans-serif' }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+
+          {status === 'denied' && (
+            <div style={{ fontSize: 11, color: '#8a5a28', marginBottom: 12, padding: '8px 12px', background: 'rgba(138,90,40,0.07)', borderRadius: 8 }}>
+              Authorisation cancelled — you can connect Oura later from your profile.
+            </div>
+          )}
+          {status === 'error' && (
+            <div style={{ fontSize: 11, color: '#8a2828', marginBottom: 12, padding: '8px 12px', background: 'rgba(138,40,40,0.07)', borderRadius: 8 }}>
+              Something went wrong. Try again or skip for now.
+            </div>
+          )}
+
+          {/* Single OAuth button — no API keys for user to find */}
+          <a
+            href="/api/oura/auth?return_to=/onboarding"
+            style={{
+              ...btnPrimary,
+              display: 'block', textAlign: 'center', textDecoration: 'none',
+              marginBottom: 8,
+            }}
+          >
+            Connect with Oura →
+          </a>
+          <button style={btnGhost} onClick={onSkip}>Skip for now</button>
+          <button style={btnGhost} onClick={onBack}>Back</button>
+        </>
+      ) : (
+        <>
+          <div style={{ padding: '12px 14px', background: 'rgba(15,110,86,0.08)', border: '1px solid rgba(15,110,86,0.2)', borderRadius: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#0f6e56', marginBottom: ouraData ? 8 : 0 }}>✓ Oura connected</div>
+            {ouraData?.readiness && (
+              <div style={{ display: 'flex', gap: 16 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ ...mono, fontSize: 22, fontWeight: 500, color: '#182e22' }}>{ouraData.readiness.score}</div>
+                  <div style={{ fontSize: 9, color: '#7aaa8a', textTransform: 'uppercase', letterSpacing: '0.07em' }}>readiness</div>
+                </div>
+                {ouraData.sleep && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ ...mono, fontSize: 22, fontWeight: 500, color: '#182e22' }}>{ouraData.sleep.score}</div>
+                    <div style={{ fontSize: 9, color: '#7aaa8a', textTransform: 'uppercase', letterSpacing: '0.07em' }}>sleep</div>
+                  </div>
+                )}
+                <div style={{ flex: 1, fontSize: 11, color: '#3a5c47', lineHeight: 1.5, paddingLeft: 8 }}>
+                  {ouraData.readiness.energy_note}
+                </div>
+              </div>
+            )}
+          </div>
+          <button style={btnPrimary} onClick={onNext}>Continue →</button>
+          <button style={btnGhost} onClick={onBack}>Back</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ══ STEP 6b: WHISPER ═══════════════════════════════════════════════════════════
+function WhisperStep({ onNext, onBack, onSkip }) {
+  const [key, setKey]     = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saved, setSaved]  = useState(false)
+  const [error, setError]  = useState('')
+
+  async function save() {
+    if (!key.trim()) return
+    setLoading(true); setError('')
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ openai_api_key: key.trim() }),
+      })
+      if (!res.ok) { setError('Failed to save key'); setLoading(false); return }
+      setSaved(true)
+    } catch { setError('Network error') }
+    setLoading(false)
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 28, textAlign: 'center', marginBottom: 8 }}>🎙️</div>
+      <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic', textAlign: 'center' }}>
+        Voice memos via Whisper
+      </h2>
+      <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6, textAlign: 'center' }}>
+        Optional. Transcribes voice notes via OpenAI Whisper (~$0.006/min).
+      </p>
+
+      {!saved ? (
         <>
           <div style={{ padding: '10px 12px', background: 'rgba(45,122,82,0.06)', borderRadius: 8, marginBottom: 14, fontSize: 11.5, color: '#3a5c47', lineHeight: 1.6 }}>
-            <strong>Get your token:</strong><br />
-            1. Go to <span style={{ ...mono, fontSize: 10 }}>cloud.ouraring.com</span><br />
-            2. Profile → Personal Access Tokens<br />
-            3. Create token → copy and paste below
+            <strong>Get your key:</strong><br />
+            1. Go to <span style={{ ...mono, fontSize: 10 }}>platform.openai.com/api-keys</span><br />
+            2. Create a new secret key → copy and paste below
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={label9}>Personal access token</label>
+            <label style={label9}>OpenAI API key</label>
             <input
               style={inputStyle}
               type="password"
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              placeholder="Paste your Oura token here…"
-              onKeyDown={e => e.key === 'Enter' && connect()}
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              placeholder="sk-..."
+              onKeyDown={e => e.key === 'Enter' && save()}
             />
           </div>
-          {error && (
-            <div style={{ fontSize: 11, color: '#8a2828', marginBottom: 10, fontFamily: 'JetBrains Mono, monospace' }}>
-              ⚠ {error}
-            </div>
-          )}
-          <button style={btnPrimary} onClick={connect} disabled={loading || !token.trim()}>
-            {loading ? 'Connecting…' : 'Connect Oura →'}
+          {error && <div style={{ fontSize: 11, color: '#8a2828', marginBottom: 10, fontFamily: 'JetBrains Mono, monospace' }}>⚠ {error}</div>}
+          <button style={btnPrimary} onClick={save} disabled={loading || !key.trim()}>
+            {loading ? 'Saving…' : 'Save key →'}
           </button>
           <button style={btnGhost} onClick={onSkip}>Skip for now</button>
         </>
       ) : (
         <>
           <div style={{ padding: '12px 14px', background: 'rgba(15,110,86,0.08)', border: '1px solid rgba(15,110,86,0.2)', borderRadius: 10, marginBottom: 14 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#0f6e56', marginBottom: 6 }}>✓ Connected successfully</div>
-            {result.data?.readiness && (
-              <div style={{ display: 'flex', gap: 16 }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ ...mono, fontSize: 22, fontWeight: 500, color: '#182e22' }}>{result.data.readiness.score}</div>
-                  <div style={{ fontSize: 9, color: '#7aaa8a', textTransform: 'uppercase', letterSpacing: '0.07em' }}>readiness</div>
-                </div>
-                {result.data.sleep && (
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ ...mono, fontSize: 22, fontWeight: 500, color: '#182e22' }}>{result.data.sleep.score}</div>
-                    <div style={{ fontSize: 9, color: '#7aaa8a', textTransform: 'uppercase', letterSpacing: '0.07em' }}>sleep</div>
-                  </div>
-                )}
-                <div style={{ flex: 1, fontSize: 11, color: '#3a5c47', lineHeight: 1.5, paddingLeft: 8 }}>
-                  {result.data.readiness.energy_note}
-                </div>
-              </div>
-            )}
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#0f6e56' }}>✓ Key saved — voice memos enabled</div>
           </div>
           <button style={btnPrimary} onClick={onNext}>Continue →</button>
         </>
@@ -753,8 +1028,8 @@ function OuraStep({ onNext, onBack, onSkip }) {
   )
 }
 
-// ══ STEP 6: RELATIONSHIPS ══════════════════════════════════════════════════════
-function RelationshipsStep({ onNext, onBack }) {
+// ══ STEP 6c: RELATIONSHIPS ══════════════════════════════════════════════════════
+function RelationshipsStep({ data, onChange, onNext, onBack }) {
   return (
     <div>
       <div style={{ fontSize: 28, textAlign: 'center', marginBottom: 8 }}>🤝</div>
@@ -762,15 +1037,15 @@ function RelationshipsStep({ onNext, onBack }) {
         Relationship intelligence
       </h2>
       <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6, textAlign: 'center' }}>
-        The COO reads your Google Contacts to track touchpoints and birthdays. No messages — just names, birthdays, and when you last connected.
+        No contact engineering needed. Your COO picks up names from your outline and conversations, then asks about a few people at a time.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         {[
-          ['Birthday tracking',    '14-day advance warning → Google Calendar alert fires on your phone'],
-          ['Overdue touchpoints',  "Flags people you haven't connected with based on your tier settings"],
-          ['Weekly Sunday review', 'COO gives you a prioritised list of who to reach out to this week'],
-          ['Mark as contacted',    'Tap "Reached out" → updates their last-contact date automatically'],
+          ['Inferred from context',  'I spot names in your notes and check in: "How close are you with [Name]?" — just tap Close, Friend, Acquaintance, or Skip.'],
+          ['Birthday tracking',      '14-day advance warning — a Google Calendar alert fires on your phone.'],
+          ['Overdue touchpoints',    "Surfaces people you haven't connected with, weighted by closeness."],
+          ['Weekly Sunday nudge',    'A short prioritised list of who to reach out to — no guessing required.'],
         ].map(([title, desc]) => (
           <div key={title} style={{ padding: '9px 12px', background: 'rgba(45,122,82,0.06)', borderRadius: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: '#182e22', marginBottom: 2 }}>{title}</div>
@@ -779,84 +1054,351 @@ function RelationshipsStep({ onNext, onBack }) {
         ))}
       </div>
 
-      <div style={{ padding: '10px 12px', background: 'rgba(26,95,168,0.07)', border: '1px solid rgba(26,95,168,0.15)', borderRadius: 8, marginBottom: 14, fontSize: 11, color: '#144a85', lineHeight: 1.6 }}>
-        <strong>One setup step:</strong> In Google Contacts, add a custom field to your important people:<br />
-        Key: <span style={{ ...mono, fontSize: 10 }}>relationship_tier</span> → Value: <span style={{ ...mono, fontSize: 10 }}>close</span>, <span style={{ ...mono, fontSize: 10 }}>friend</span>, or <span style={{ ...mono, fontSize: 10 }}>acquaintance</span><br />
-        The COO ignores untagged contacts.
+      <div style={{ marginBottom: 16 }}>
+        <label style={label9}>Anyone specific to start with? (optional)</label>
+        <textarea
+          style={{ ...inputStyle, resize: 'vertical' }}
+          rows={2}
+          value={data.relationship_seeds || ''}
+          onChange={e => onChange('relationship_seeds', e.target.value)}
+          placeholder="e.g. my sister Sarah, manager David, old friend Marcus…"
+        />
+        <div style={{ fontSize: 10, color: '#9ab8a8', marginTop: 4, lineHeight: 1.5 }}>
+          Your COO will ask about these first. Everyone else surfaces naturally over time.
+        </div>
       </div>
 
-      <button style={btnPrimary} onClick={onNext}>Got it →</button>
+      <button style={btnPrimary} onClick={onNext}>Continue →</button>
       <button style={btnGhost} onClick={onBack}>Back</button>
     </div>
   )
 }
 
-// ══ STEP 7: DONE ══════════════════════════════════════════════════════════════
+// ══ STEP 7: DONE — COO boot briefing ══════════════════════════════════════════
+const SCAN_LABELS = [
+  'Connecting to Gmail…',
+  'Scanning Calendar…',
+  'Reading Contacts…',
+  'Checking Oura Ring…',
+  'Building your plan…',
+]
+
 function DoneStep({ onFinish, saving }) {
+  const [phase, setPhase]       = useState('scanning')   // 'scanning' | 'ready'
+  const [briefing, setBriefing] = useState(null)
+  const [approved, setApproved] = useState({})
+  const [scanIdx, setScanIdx]   = useState(0)
+
+  useEffect(() => {
+    // Animate scan labels while waiting for the API
+    const ticker = setInterval(() => setScanIdx(i => Math.min(i + 1, SCAN_LABELS.length - 1)), 1100)
+
+    fetch('/api/coo/init')
+      .then(r => r.json())
+      .then(d => {
+        clearInterval(ticker)
+        setBriefing(d)
+        // Approve all proposals by default
+        const a = {}
+        for (const p of (d.background_proposals || [])) a[p.id] = true
+        setApproved(a)
+        setPhase('ready')
+      })
+      .catch(() => { clearInterval(ticker); setPhase('ready') })
+
+    return () => clearInterval(ticker)
+  }, [])
+
+  function handleFinish() {
+    const approvedIds = Object.entries(approved).filter(([, v]) => v).map(([id]) => id)
+    onFinish({ background_proposals: approvedIds })
+  }
+
+  // ── Scanning phase ──────────────────────────────────────────────────────────
+  if (phase === 'scanning') {
+    return (
+      <div style={{ textAlign: 'center', padding: '8px 0' }}>
+        <div style={{ fontSize: 36, marginBottom: 10 }}>🌲</div>
+        <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic' }}>
+          Taking stock of your world…
+        </h2>
+        <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 18, lineHeight: 1.6 }}>
+          Your COO is scanning what's available before giving you a plan.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 18 }}>
+          {SCAN_LABELS.map((label, i) => (
+            <div key={label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px', borderRadius: 8,
+              background: i < scanIdx ? 'rgba(15,110,86,0.07)' : i === scanIdx ? 'rgba(45,122,82,0.04)' : 'transparent',
+              opacity: i <= scanIdx ? 1 : 0.3,
+              transition: 'all .5s',
+            }}>
+              <span style={{ width: 16, fontSize: 11, color: i < scanIdx ? '#0f6e56' : '#9ab8a8', flexShrink: 0 }}>
+                {i < scanIdx ? '✓' : i === scanIdx ? '⟳' : '○'}
+              </span>
+              <span style={{ ...mono, fontSize: 11, color: i < scanIdx ? '#0f6e56' : '#3a5c47', textAlign: 'left' }}>
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ ...mono, fontSize: 10, color: '#b0c4b8' }}>
+          This only happens once
+        </div>
+      </div>
+    )
+  }
+
+  // ── Ready phase — COO briefing ──────────────────────────────────────────────
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>🌲</div>
-      <h2 style={{ ...serif, fontSize: 22, color: '#182e22', marginBottom: 8, fontStyle: 'italic' }}>
-        You're all set
+    <div>
+      <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 10 }}>🌲</div>
+      <h2 style={{ ...serif, fontSize: 19, color: '#182e22', marginBottom: 4, fontStyle: 'italic', textAlign: 'center' }}>
+        Your COO has the picture
       </h2>
-      <p style={{ fontSize: 13, color: '#3a5c47', lineHeight: 1.7, marginBottom: 20 }}>
-        Your COO will build your first schedule tomorrow morning at 7:30 am using your Calendar, Gmail, and Oura data. You'll get a Google Calendar notification when it's ready.
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
-        {[
-          '7:30am — COO reads your world and builds your day',
-          'Open the app → Matrix shows your tasks as bubbles',
-          'Schedule tab → Accept or veto each block',
-          'Tap bubbles to mark tasks complete',
-          'Check-ins at 12pm, 4pm, and 7pm',
-        ].map((item, i) => (
-          <div key={i} style={{ display: 'flex', gap: 10, padding: '7px 12px', background: 'rgba(45,122,82,0.05)', borderRadius: 7, textAlign: 'left' }}>
-            <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', paddingTop: 2, flexShrink: 0 }}>
+
+      {/* Connected resources */}
+      {briefing?.resources?.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...label9, marginBottom: 5 }}>Connected</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {briefing.resources.map(r => (
+              <div key={r.name} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                padding: '7px 10px', background: 'rgba(15,110,86,0.06)', borderRadius: 7,
+              }}>
+                <span style={{ fontSize: 11, color: '#0f6e56', flexShrink: 0, paddingTop: 1 }}>✓</span>
+                <div>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: '#182e22', marginRight: 6 }}>{r.name}</span>
+                  <span style={{ fontSize: 10.5, color: '#7aaa8a' }}>{r.detail}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ETA + schedule steps */}
+      <div style={{
+        padding: '10px 12px', background: 'rgba(26,95,168,0.07)',
+        border: '1px solid rgba(26,95,168,0.12)', borderRadius: 8, marginBottom: 14,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: '#144a85', marginBottom: 6 }}>
+          🕐 {briefing?.eta || 'First brief ready tomorrow at 7:30am'}
+        </div>
+        {(briefing?.schedule_steps || []).map((s, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <span style={{ ...mono, fontSize: 9, color: '#144a85', paddingTop: 2, flexShrink: 0 }}>
               {String(i + 1).padStart(2, '0')}
             </span>
-            <span style={{ fontSize: 12, color: '#3a5c47', lineHeight: 1.5 }}>{item}</span>
+            <span style={{ fontSize: 11, color: '#3d6087', lineHeight: 1.5 }}>{s}</span>
           </div>
         ))}
       </div>
-      <button style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }} onClick={onFinish} disabled={saving}>
-        {saving ? 'Saving…' : 'Open Forest for the Trees →'}
+
+      {/* Background proposals */}
+      {(briefing?.background_proposals || []).length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...label9, marginBottom: 5 }}>Background tasks I'd like to start</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {briefing.background_proposals.map(p => (
+              <div key={p.id} style={{
+                padding: '9px 10px', borderRadius: 8,
+                background: approved[p.id] ? 'rgba(15,110,86,0.07)' : 'rgba(180,180,180,0.05)',
+                border: `1px solid ${approved[p.id] ? 'rgba(15,110,86,0.2)' : 'rgba(180,180,180,0.2)'}`,
+                transition: 'all .2s',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#182e22', marginBottom: 3 }}>
+                      {p.icon} {p.title}
+                      {p.eta && (
+                        <span style={{ ...mono, fontSize: 9, color: '#9ab8a8', marginLeft: 7, fontWeight: 400 }}>
+                          {p.eta}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#5a7a68', lineHeight: 1.5 }}>{p.rationale}</div>
+                  </div>
+                  <Toggle
+                    on={!!approved[p.id]}
+                    onChange={v => setApproved(a => ({ ...a, [p.id]: v }))}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: '#9ab8a8', marginTop: 5, lineHeight: 1.5 }}>
+            Toggle off anything you'd prefer I leave alone. Change anytime from settings.
+          </div>
+        </div>
+      )}
+
+      <button
+        style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}
+        onClick={handleFinish}
+        disabled={saving}
+      >
+        {saving ? 'Saving…' : "Let's go →"}
       </button>
     </div>
   )
 }
 
+const DRAFT_KEY = 'fftt_onboarding'
+
+const DEFAULT_FORM = {
+  integration_tier: 'google',
+  addons:           [],
+  roadmap:          '',
+  peak_hours:       'standard',
+  rhythm_notes:     '',
+  adhd_aware:       false,
+  adhd_patterns:    [],
+  coo_notes:        '',
+  notification_prefs: {
+    morning_brief:     true,
+    midday_checkin:    true,
+    afternoon_checkin: true,
+    evening_retro:     true,
+    urgent_alerts:     true,
+    birthday_alerts:   true,
+  },
+  life_areas:          [],
+  outline:             '',
+  pending_agents:      [],
+  relationship_seeds:  '',
+}
+
 // ══ MAIN CONTROLLER ════════════════════════════════════════════════════════════
 export default function OnboardingPage() {
-  const router  = useRouter()
-  const [step, setStep]     = useState('welcome')
-  const [saving, setSaving] = useState(false)
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const [step, setStep]               = useState('welcome')
+  const [saving, setSaving]           = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [formData, setFormData]       = useState(DEFAULT_FORM)
+  const [restored, setRestored]       = useState(false) // gate: don't save until restore is done
 
-  const [formData, setFormData] = useState({
-    integration_tier: 'google',
-    addons:           [],
-    roadmap:          '',
-    peak_hours:       '9-11am, 3-5pm',
-    adhd_aware:       false,
-    adhd_patterns:    [],
-    coo_notes:        '',
-    notification_prefs: {
-      morning_brief:     true,
-      midday_checkin:    true,
-      afternoon_checkin: true,
-      evening_retro:     true,
-      urgent_alerts:     true,
-      birthday_alerts:   true,
-    },
-    life_areas:     [],
-    outline:        '',
-    pending_agents: [],
-  })
+  // On mount: restore draft from localStorage → fallback to Supabase → mark ready to save
+  useEffect(() => {
+    const ouraParam = searchParams.get('oura')
+
+    async function restore() {
+      // 1. Try localStorage first (most current — has live step position)
+      try {
+        const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
+        if (saved?.formData) {
+          setFormData(f => ({ ...f, ...saved.formData }))
+          if (ouraParam) {
+            setStep('oura')
+            window.history.replaceState({}, '', '/onboarding')
+          } else if (saved.step && saved.step !== 'welcome' && saved.step !== 'done') {
+            setStep(saved.step)
+          }
+          setRestored(true)
+          return
+        }
+      } catch { /* localStorage unavailable */ }
+
+      // 2. Fallback: fetch saved settings from Supabase
+      try {
+        const res = await fetch('/api/settings')
+        if (res.ok) {
+          const { settings } = await res.json()
+          // If already fully onboarded, send to app
+          if (settings?.onboarding_complete) {
+            router.replace('/')
+            return
+          }
+          // Pre-fill whatever was saved previously (any non-default value counts)
+          const hasData = settings?.roadmap || settings?.outline || settings?.life_areas?.length
+            || (settings?.peak_hours && settings.peak_hours !== 'standard')
+            || settings?.addons?.length || settings?.rhythm_notes || settings?.coo_notes
+          if (hasData) {
+            setFormData(f => ({
+              ...f,
+              integration_tier:  settings.integration_tier  || f.integration_tier,
+              addons:            settings.addons             || f.addons,
+              roadmap:           settings.roadmap            || f.roadmap,
+              peak_hours:        settings.peak_hours         || f.peak_hours,
+              rhythm_notes:      settings.rhythm_notes       || f.rhythm_notes,
+              adhd_aware:        settings.adhd_aware         ?? f.adhd_aware,
+              adhd_patterns:     settings.adhd_patterns      || f.adhd_patterns,
+              coo_notes:         settings.coo_notes          || f.coo_notes,
+              outline:           settings.outline            || f.outline,
+              life_areas:        settings.life_areas         || f.life_areas,
+              notification_prefs:settings.notification_prefs || f.notification_prefs,
+              relationship_seeds:settings.relationship_seeds || f.relationship_seeds,
+            }))
+          }
+        }
+      } catch { /* non-fatal — continue with defaults */ }
+
+      if (ouraParam) {
+        setStep('oura')
+        window.history.replaceState({}, '', '/onboarding')
+      }
+      setRestored(true)
+    }
+
+    restore()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save to localStorage — only after initial restore to avoid overwriting draft with defaults
+  useEffect(() => {
+    if (!restored || step === 'done') return
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ step, formData })) } catch {}
+  }, [step, formData, restored])
+
+  // Persist to Supabase on each step advance — survives hot reloads and browser clears
+  async function persistToServer(data) {
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          integration_tier:   data.integration_tier,
+          addons:             data.addons,
+          roadmap:            data.roadmap,
+          peak_hours:         data.peak_hours,
+          rhythm_notes:       data.rhythm_notes,
+          adhd_aware:         data.adhd_aware,
+          adhd_patterns:      data.adhd_patterns,
+          coo_notes:          data.coo_notes,
+          outline:            data.outline,
+          life_areas:         data.life_areas,
+          notification_prefs: data.notification_prefs,
+          relationship_seeds: data.relationship_seeds || '',
+        }),
+      })
+    } catch { /* non-fatal */ }
+  }
+
+  function startOver() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    setFormData(DEFAULT_FORM)
+    setStep('welcome')
+    setConfirmReset(false)
+  }
 
   const set  = (key, val) => setFormData(f => ({ ...f, [key]: val }))
-  const next = () => setStep(STEPS[STEPS.indexOf(step) + 1])
-  const back = () => setStep(STEPS[STEPS.indexOf(step) - 1])
+  const next = () => {
+    persistToServer(formData) // fire-and-forget — localStorage is primary, this is backup
+    let idx = STEPS.indexOf(step) + 1
+    while (idx < STEPS.length && ADDON_STEPS[STEPS[idx]] && !formData.addons.includes(ADDON_STEPS[STEPS[idx]])) idx++
+    setStep(STEPS[idx])
+  }
+  const back = () => {
+    let idx = STEPS.indexOf(step) - 1
+    while (idx >= 0 && ADDON_STEPS[STEPS[idx]] && !formData.addons.includes(ADDON_STEPS[STEPS[idx]])) idx--
+    setStep(STEPS[idx])
+  }
 
-  async function finish() {
+  async function finish(payload = {}) {
     setSaving(true)
     const weekly_time_budget = Object.fromEntries(
       formData.life_areas.map(a => [a.key, a.blocks * 15])
@@ -867,18 +1409,21 @@ export default function OnboardingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          integration_tier:   formData.integration_tier,
-          addons:             formData.addons,
-          roadmap:            formData.roadmap,
-          peak_hours:         formData.peak_hours,
-          adhd_aware:         formData.adhd_aware,
-          adhd_patterns:      formData.adhd_patterns,
-          coo_notes:          formData.coo_notes,
-          outline:            formData.outline,
-          notification_prefs: formData.notification_prefs,
-          life_areas:         formData.life_areas,
+          integration_tier:     formData.integration_tier,
+          addons:               formData.addons,
+          roadmap:              formData.roadmap,
+          peak_hours:           formData.peak_hours,
+          rhythm_notes:         formData.rhythm_notes,
+          adhd_aware:           formData.adhd_aware,
+          adhd_patterns:        formData.adhd_patterns,
+          coo_notes:            formData.coo_notes,
+          outline:              formData.outline,
+          notification_prefs:   formData.notification_prefs,
+          life_areas:           formData.life_areas,
           weekly_time_budget,
-          onboarding_complete: true,
+          relationship_seeds:   formData.relationship_seeds || '',
+          background_proposals: payload.background_proposals || [],
+          onboarding_complete:  true,
         }),
       })
       // Save generated agents (if any confirmed)
@@ -890,6 +1435,7 @@ export default function OnboardingPage() {
         })
       }
     } finally {
+      try { localStorage.removeItem(DRAFT_KEY) } catch {}
       router.push('/')
     }
     setSaving(false)
@@ -906,9 +1452,34 @@ export default function OnboardingPage() {
           {step === 'areas'         && <AreasStep         data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'outline'       && <OutlineStep      data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'schedule'      && <ScheduleStep      data={formData} onChange={set} onNext={next} onBack={back} />}
-          {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} />}
-          {step === 'relationships' && <RelationshipsStep onNext={next} onBack={back} />}
+          {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} initialStatus={searchParams.get('oura')} />}
+          {step === 'whisper'       && <WhisperStep       onNext={next} onBack={back} onSkip={next} />}
+          {step === 'relationships' && <RelationshipsStep data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'done'          && <DoneStep          onFinish={finish} saving={saving} />}
+
+          {/* Start over — shown on all steps except done */}
+          {step !== 'done' && (
+            <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid rgba(122,170,138,0.12)', textAlign: 'center' }}>
+              {!confirmReset ? (
+                <button
+                  onClick={() => setConfirmReset(true)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(122,170,138,0.5)', fontFamily: 'Figtree, sans-serif' }}
+                >
+                  Start over
+                </button>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 11, color: '#5a7a68', fontFamily: 'Figtree, sans-serif' }}>Clear all progress?</span>
+                  <button onClick={startOver} style={{ background: 'none', border: '1px solid rgba(138,40,40,0.3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, color: '#8a2828', padding: '3px 10px', fontFamily: 'Figtree, sans-serif' }}>
+                    Yes, start over
+                  </button>
+                  <button onClick={() => setConfirmReset(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#7aaa8a', fontFamily: 'Figtree, sans-serif' }}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -1,17 +1,26 @@
 import './globals.css'
 import { Providers } from './providers'
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#2d5a3d',
+}
+
 export const metadata = {
-  title: 'Forest for the Trees',
+  title: 'Forest for the Tree',
   description: 'Your autonomous life COO',
   manifest: '/manifest.json',
-  themeColor: '#2d5a3d',
+  icons: {
+    icon: '/FFTT_tab.jpeg',
+    apple: '/FFTT_tab.jpeg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'Forest',
   },
-  viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
 }
 
 export default function RootLayout({ children }) {

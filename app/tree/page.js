@@ -48,6 +48,14 @@ export default function TreePage() {
     if (status === 'authenticated') refresh()
   }, [status, refresh])
 
+  const email = session?.user?.email
+  const sessionReady = status === 'authenticated' && !!email
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (status === 'unauthenticated') router.replace('/')
+  }, [status, router])
+
   async function patchContext(partial) {
     const res = await fetch('/api/settings', {
       method: 'PATCH',
@@ -111,15 +119,52 @@ export default function TreePage() {
 
   if (status === 'loading') {
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc2)', color: '#fff', ...m, fontSize: 12 }}>
-        Loading…
-      </div>
+      <>
+        <div className="app-bg" style={{ zIndex: 0 }} />
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 10,
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            ...m,
+            fontSize: 12,
+            color: 'var(--txt2)',
+          }}
+        >
+          Loading…
+        </div>
+      </>
     )
   }
 
-  if (!session?.user?.email) {
-    router.replace('/')
-    return null
+  if (!sessionReady) {
+    return (
+      <>
+        <div className="app-bg" style={{ zIndex: 0 }} />
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 10,
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            ...m,
+            fontSize: 12,
+            color: 'var(--txt2)',
+            textAlign: 'center',
+          }}
+        >
+          {status === 'authenticated' && !email
+            ? 'Your Google account has no email on file. Add email to the provider or sign in with a different account.'
+            : 'Redirecting…'}
+        </div>
+      </>
+    )
   }
 
   const mode = treeData?.tree_bg_mode || 'sticky'

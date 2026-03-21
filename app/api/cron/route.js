@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getFeatureFlags } from '@/lib/integrations'
 import { generateMorningBriefWithOura, runAgentBrief } from '@/lib/coo'
 import { getTodayEvents, getImportantEmails, clearCOOEvents, writeCOOScheduleToCalendar, writeUrgentAlert, getRelationshipContacts, getUpcomingBirthdays, getOverdueContacts } from '@/lib/google'
