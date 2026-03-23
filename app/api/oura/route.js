@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { getOuraMorningContext, validateOuraToken } from '@/lib/oura'
+import { getOuraMorningContext, validateOuraToken, refreshOuraToken } from '@/lib/oura'
 
 // GET — fetch latest Oura data (cached)
 export async function GET(req) {
@@ -30,8 +30,25 @@ export async function GET(req) {
     }
   }
 
-  const token = connector.credentials?.access_token
+  let token = connector.credentials?.access_token
   if (!token) return Response.json({ connected: false, error: 'No token stored' })
+
+  // Auto-refresh OAuth token if it expires within 7 days
+  const expiresAt = connector.credentials?.expires_at
+  const refreshToken = connector.credentials?.refresh_token
+  if (expiresAt && refreshToken && connector.type === 'oauth') {
+    const msUntilExpiry = new Date(expiresAt).getTime() - Date.now()
+    if (msUntilExpiry < 7 * 24 * 60 * 60 * 1000) {
+      try {
+        const refreshed = await refreshOuraToken(refreshToken)
+        token = refreshed.access_token
+        await supabaseAdmin.from('connectors').update({
+          credentials: { access_token: refreshed.access_token, refresh_token: refreshed.refresh_token, expires_at: refreshed.expires_at },
+          last_sync: new Date().toISOString(),
+        }).eq('id', connector.id).eq('user_id', userId)
+      } catch { /* keep existing token */ }
+    }
+  }
 
   const data = await getOuraMorningContext(token)
 
@@ -71,7 +88,7 @@ export async function POST(req) {
     last_sync: new Date().toISOString(),
     metadata: { oura_email: validation.email },
     created_at: new Date().toISOString(),
-  }, { onConflict: 'id,user_id' })
+  }, { onConflict: 'id' })
 
   // Fetch initial data
   const data = await getOuraMorningContext(token)

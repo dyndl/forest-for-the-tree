@@ -1517,6 +1517,25 @@ function OnboardingPage() {
           body: JSON.stringify({ agents: formData.pending_agents, replace_defaults: true }),
         })
       }
+
+      // Evaluate starting Life Tree tier from career background (fire-and-forget)
+      fetch('/api/tree/tier-eval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outline:     formData.outline,
+          roadmap:     formData.roadmap,
+          life_areas:  formData.life_areas,
+        }),
+      }).catch(() => {})
+
+      // Seed Life Tree branches/rings/roots/relationships/legacies from outline (fire-and-forget)
+      fetch('/api/tree/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+
       // Only clear and redirect after confirmed save
       try { localStorage.removeItem(DRAFT_KEY) } catch {}
       router.push('/')

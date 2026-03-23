@@ -187,11 +187,16 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div>
-            <p style={{ fontSize:11.5, color:'#7aaa8a', marginBottom:10, lineHeight:1.6 }}>Connect your Oura Ring to auto-set energy level each morning. Get your token at <span style={mono}>cloud.ouraring.com/personal-access-tokens</span></p>
-            <input style={inputStyle} type="password" value={ouraToken} onChange={e=>setOuraToken(e.target.value)} placeholder="Paste personal access token…" />
-            <button onClick={connectOura} disabled={!ouraToken.trim()} style={{ marginTop:10, background:'#1a5a3c', color:'#fff', border:'none', borderRadius:7, padding:'8px 16px', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'Figtree, sans-serif', opacity:ouraToken.trim()?1:0.5 }}>
-              Connect Oura →
-            </button>
+            <a href="/api/oura/auth?return_to=/settings" style={{ display:'block', background:'#1a5a3c', color:'#fff', border:'none', borderRadius:7, padding:'10px 16px', fontSize:12.5, fontWeight:600, cursor:'pointer', fontFamily:'Figtree, sans-serif', textDecoration:'none', textAlign:'center', marginBottom:12 }}>
+              Connect Oura Ring with OAuth →
+            </a>
+            <p style={{ fontSize:10.5, color:'#7aaa8a', marginBottom:10, lineHeight:1.6 }}>Or use a personal access token from <span style={mono}>cloud.ouraring.com/personal-access-tokens</span></p>
+            <div style={{ display:'flex', gap:8 }}>
+              <input style={{ ...inputStyle, marginTop:0 }} type="password" value={ouraToken} onChange={e=>setOuraToken(e.target.value)} placeholder="Paste personal access token…" />
+              <button onClick={connectOura} disabled={!ouraToken.trim()} style={{ flexShrink:0, background:'rgba(26,90,60,0.1)', color:'#1a5a3c', border:'1px solid rgba(26,90,60,0.25)', borderRadius:7, padding:'8px 14px', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'Figtree, sans-serif', opacity:ouraToken.trim()?1:0.5 }}>
+                Save
+              </button>
+            </div>
           </div>
         )}
       </Section>

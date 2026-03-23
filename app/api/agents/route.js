@@ -13,19 +13,19 @@ const DEFAULT_AGENTS = [
     id: 'a1', name: 'Deep Work Coach', icon: '🧠', area: 'deep_work',
     score: 80, runs: 0, streak: 0,
     prompt: 'You are my deep work coach. Help me protect focus blocks, avoid distraction, and make progress on my most important work each day. Suggest one concrete deep work session per day in 15-min blocks. Be direct and encouraging.',
-    customPrompt: null, output: '', alert: '', status: 'idle',
+    custom_prompt: null, output: '', alert: '', status: 'idle',
   },
   {
     id: 'a2', name: 'Relationship Pulse', icon: '🤝', area: 'relationships',
     score: 70, runs: 0, streak: 0,
     prompt: 'You are my relationship steward. Suggest one meaningful touchpoint per day — a message, call, or shared activity — under 20 min. Flag if I have gone several days without social contact.',
-    customPrompt: null, output: '', alert: '', status: 'idle',
+    custom_prompt: null, output: '', alert: '', status: 'idle',
   },
   {
     id: 'a3', name: 'Learning Curator', icon: '📚', area: 'learning',
     score: 75, runs: 0, streak: 0,
     prompt: 'You are my learning strategist. Build spaced-repetition study plans in 15-min blocks. Ask me what I am currently learning and suggest one concept to work on today.',
-    customPrompt: null, output: '', alert: '', status: 'idle',
+    custom_prompt: null, output: '', alert: '', status: 'idle',
   },
 ]
 
@@ -88,7 +88,7 @@ export async function POST(req) {
 
   // Augment agent prompt with context
   const augmentedAgent = agentContext
-    ? { ...agentRow, prompt: (agentRow.customPrompt || agentRow.prompt) + agentContext }
+    ? { ...agentRow, prompt: (agentRow.custom_prompt || agentRow.prompt) + agentContext }
     : agentRow
 
   // Mark thinking

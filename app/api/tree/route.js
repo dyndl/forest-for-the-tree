@@ -25,7 +25,7 @@ export async function GET() {
   const [{ data: catalog, error: catErr }, ctxRes] = await Promise.all([
     supabaseAdmin
       .from('tree_species_catalog')
-      .select('tier,name,emoji,slug,tier_group,group_name')
+      .select('tier,name,emoji,slug,tier_group,group_name,height_ft,width_ft,fact,exemplar,image_url')
       .order('tier', { ascending: true }),
     supabaseAdmin
       .from('user_context')
@@ -98,8 +98,14 @@ export async function GET() {
     return Response.json({ error: errors[0].message }, { status: 500 })
   }
 
+  // Next unlocked species (first catalog row above current tier)
+  const next_milestone = catalogRows.find((c) => c.tier > milestoneTier) || null
+
   return Response.json({
     species: speciesOut,
+    current_catalog_row: milestone || null,
+    next_milestone,
+    catalog: catalogRows,
     tree_bg_mode: mode,
     milestone_tier: milestoneTier,
     milestone_slug: milestoneSlug,

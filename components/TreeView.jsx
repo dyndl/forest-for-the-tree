@@ -25,16 +25,17 @@ const spineColor = (tierNum) => {
 }
 
 const STATE_MAP = {
-  growing: { tip: '🍃', mid: '🍃', label: 'Growing' },
-  stunted: { tip: '🍂', mid: '🍂', label: 'Stunted' },
-  done: { tip: '🌟', mid: '🍃', label: 'Done' },
-  dormant: { tip: '❄️', mid: '🍂', label: 'Dormant' },
-  pruned: { tip: '✂️', mid: null, label: 'Pruned' },
-  'storm-fell': { tip: '💨', mid: null, label: 'Felled' },
-  fractured: { tip: '⚡', mid: null, label: 'Fractured' },
-  blighted: { tip: '🍂', mid: null, label: 'Blighted' },
-  atrophied: { tip: '🩶', mid: null, label: 'Atrophied' },
-  severed: { tip: '✂️', mid: null, label: 'Severed' },
+  growing:     { tip: '🌿', mid: '🌿', label: 'Growing' },
+  stunted:     { tip: '🍂', mid: '🍂', label: 'Stunted' },
+  done:        { tip: '✨', mid: '🌿', label: 'Done' },
+  dormant:     { tip: '❄️', mid: '🍂', label: 'Dormant' },
+  pruned:      { tip: '✂️', mid: null,  label: 'Pruned' },
+  'storm-fell':{ tip: '💨', mid: null,  label: 'Felled' },
+  fractured:   { tip: '⚡', mid: null,  label: 'Fractured' },
+  archived:    { tip: '🍄', mid: null,  label: 'Archived' },
+  blighted:    { tip: '🍂', mid: null,  label: 'Blighted' },
+  atrophied:   { tip: '🩶', mid: null,  label: 'Atrophied' },
+  severed:     { tip: '✂️', mid: null,  label: 'Severed' },
 }
 
 const yOf = (yr, birthYear, yh) => TOP + (NOW + 1 - yr) * yh
@@ -273,12 +274,15 @@ const wrap = {
   }),
 }
 
-export default function TreeView({ treeData, treeLoading, treeError }) {
+export default function TreeView({ treeData, treeLoading, treeError, gran: granProp, onGranChange }) {
   const hostRef = useRef(null)
   const scrollRef = useRef(null)
   const roRef = useRef(null)
 
-  const [gran, setGran] = useState('year')
+  const [granInternal, setGranInternal] = useState('year')
+  const gran = granProp ?? granInternal
+  const setGran = onGranChange ?? setGranInternal
+  const isControlled = typeof onGranChange === 'function'
   const [zoom, setZoom] = useState(1)
 
   const speciesData = treeData?.species ?? null
@@ -362,7 +366,9 @@ export default function TreeView({ treeData, treeLoading, treeError }) {
   if (!speciesData) return null
 
   const slug = speciesData.display_slug || speciesData.species_slug
-  const speciesPhoto = slug ? `/species/${slug}.jpg` : '/species/bristlecone.jpg'
+  const speciesPhoto =
+    treeData?.current_catalog_row?.image_url ||
+    (slug ? `/species/${slug}.jpg` : '/species/bristlecone.jpg')
 
   return (
     <div style={wrap.outer}>
@@ -396,22 +402,27 @@ export default function TreeView({ treeData, treeLoading, treeError }) {
         ))}
       </div>
 
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 32,
-          right: 10,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-          zIndex: 10,
-        }}
-      >
-        {['year', 'month', 'week'].map((g) => (
-          <button key={g} type="button" onClick={() => setGran(g)} style={wrap.granBtn(gran === g)}>
-            {g}
-          </button>
-        ))}
+      {!isControlled && (
+        <div style={{ position:'absolute', bottom:36, right:10, display:'flex', flexDirection:'column', gap:4, zIndex:10 }}>
+          {['year','month','week'].map(g=>(
+            <button key={g} type="button" onClick={()=>setGran(g)} style={wrap.granBtn(gran===g)}>{g}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Legend bar */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, zIndex:10, background:'rgba(20,40,22,.72)', backdropFilter:'blur(8px)', borderTop:'1px solid rgba(255,255,255,.08)', padding:'5px 14px', display:'flex', alignItems:'center', flexWrap:'wrap', gap:'0 10px' }}>
+        {[
+          ['🥕','root'],['💧','watered'],['🌿','growing'],['🍏','small win'],['🍎','milestone'],['✨','done'],['🌱','legacy'],
+          null,
+          ['🍂','stunted'],['❄️','dormant'],['✂️','pruned'],['⚡','fractured'],['💨','felled'],['🍄','archived'],
+        ].map((item,i)=>
+          item===null
+            ? <span key="sep" style={{width:1,height:12,background:'rgba(255,255,255,.18)',margin:'0 2px'}}/>
+            : <span key={item[1]} style={{display:'flex',alignItems:'center',gap:3,fontFamily:'JetBrains Mono,monospace',fontSize:9,color:'rgba(255,255,255,.65)',whiteSpace:'nowrap'}}>
+                <span style={{fontSize:11}}>{item[0]}</span>{item[1]}
+              </span>
+        )}
       </div>
     </div>
   )

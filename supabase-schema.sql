@@ -498,3 +498,7 @@ create index if not exists webhook_channels_user on webhook_channels(user_id);
 -- ── CONNECTORS: add oura_user_id column ──────────────────────────────────────
 -- Stores Oura's internal user ID so webhook pushes can be routed to the right user.
 alter table connectors add column if not exists oura_user_id text;
+
+-- ── USER_CONTEXT: missing columns ─────────────────────────────────────────────
+alter table user_context add column if not exists rhythm_notes text default '';
+alter table user_context add column if not exists voice_keyterms jsonb default '[]'::jsonb;

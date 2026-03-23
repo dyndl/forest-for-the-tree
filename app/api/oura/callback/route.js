@@ -67,20 +67,24 @@ export async function GET(req) {
     ? new Date(Date.now() + expires_in * 1000).toISOString()
     : null
 
-  await supabaseAdmin.from('connectors').upsert({
+  const { error: upsertError } = await supabaseAdmin.from('connectors').upsert({
     id: connectorId,
     user_id: userId,
     name: 'Oura Ring',
     type: 'oauth',
     provider: 'oura',
-    oura_user_id: ouraUserId,
     credentials: { access_token, refresh_token, expires_at: expiresAt },
     scopes: ['daily', 'heartrate', 'personal'],
     enabled: true,
     last_sync: new Date().toISOString(),
-    metadata: { last_data: ouraData, cached_at: new Date().toISOString() },
+    metadata: { oura_user_id: ouraUserId, last_data: ouraData, cached_at: new Date().toISOString() },
     created_at: new Date().toISOString(),
-  }, { onConflict: 'id,user_id' })
+  }, { onConflict: 'id' })
+
+  if (upsertError) {
+    console.error('Oura connector upsert failed:', upsertError.message)
+    return Response.redirect(`${base}/onboarding?oura=error&reason=db_save`)
+  }
 
   // Register Oura webhook subscription (fire-and-forget)
   if (ouraUserId && process.env.OURA_WEBHOOK_SECRET) {
