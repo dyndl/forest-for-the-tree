@@ -1,11 +1,12 @@
 'use client'
+export const dynamic = 'force-dynamic'
 import { useSession, signIn, signOut } from 'next-auth/react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRealtime } from '@/lib/realtime'
-import dynamic from 'next/dynamic'
-const TreeView=dynamic(()=>import('@/components/TreeView'),{ssr:false,loading:()=>null})
-const SettingsPanel=dynamic(()=>import('@/components/SettingsPanel'),{ssr:false,loading:()=>null})
+import dynamicImport from 'next/dynamic'
+const TreeView=dynamicImport(()=>import('@/components/TreeView'),{ssr:false,loading:()=>null})
+const SettingsPanel=dynamicImport(()=>import('@/components/SettingsPanel'),{ssr:false,loading:()=>null})
 
 const CAT_COLORS={career:'#b85c00',interview:'#0f6e56',learning:'#1a5fa8',fitness:'#8a2828',family:'#6a2878',admin:'#5a4800',finance:'#0f5a3c'}
 const Q_POS={do:{x:.76,y:.26},schedule:{x:.26,y:.26},delegate:{x:.76,y:.76},eliminate:{x:.26,y:.76}}
