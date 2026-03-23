@@ -29,6 +29,11 @@ const api={
     update:(id,u)=>fetch('/api/agents',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,...u})}).then(r=>r.json()),
   },
   settings:{get:()=>fetch('/api/settings').then(r=>r.json()).catch(()=>({settings:{}}))},
+  propose:{
+    get:()=>fetch('/api/tasks/propose').then(r=>r.json()),
+    regen:()=>fetch('/api/tasks/propose',{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()),
+    action:(action,proposal)=>fetch('/api/tasks/propose',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,proposal})}).then(r=>r.json()),
+  },
   oura:{get:()=>fetch('/api/oura').then(r=>r.json()).catch(()=>({connected:false}))},
   tree:{get:()=>fetch('/api/tree',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))},
 }
@@ -115,6 +120,9 @@ export default function App(){
   const[newAgent,setNewAgent]=useState({name:'',icon:'',area:'career',prompt:''})
   const[qaName,setQaName]=useState('');const[qaQ,setQaQ]=useState('do');const[qaCat,setQaCat]=useState('career');const[qaB,setQaB]=useState(2)
   const[tuning,setTuning]=useState(null);const[promptDraft,setPromptDraft]=useState('')
+  const[proposals,setProposals]=useState([])
+  const[proposalsOpen,setProposalsOpen]=useState(true)
+  const[proposalsLoading,setProposalsLoading]=useState(false)
   const[isOnline,setIsOnline]=useState(true)
   const[isSunday]=useState(new Date().getDay()===0)
   const[weeklyBrief,setWeeklyBrief]=useState(null)
@@ -175,6 +183,7 @@ export default function App(){
         api.agents.list().then(r=>r.agents&&setAgents(r.agents)),
         api.oura.get().then(r=>setOura(r)),
       ])
+      api.propose.get().then(r=>{if(r.proposals)setProposals(r.proposals)})
     })
     // Schedule check-ins
     const h=new Date().getHours()
@@ -252,6 +261,24 @@ export default function App(){
       if(j.tier&&!j.skipped)loadTree()
     }catch{}
     setReevalLoading(false)
+  }
+
+  async function acceptProposal(p){
+    setProposals(ps=>ps.filter(x=>x.id!==p.id))
+    const r=await api.propose.action('accept',p)
+    if(r.task)setTasks(ts=>[...ts,r.task])
+    if(r.proposals)setProposals(r.proposals)
+  }
+  async function dismissProposal(p){
+    setProposals(ps=>ps.filter(x=>x.id!==p.id))
+    const r=await api.propose.action('dismiss',p)
+    if(r.proposals)setProposals(r.proposals)
+  }
+  async function regenProposals(){
+    setProposalsLoading(true)
+    const r=await api.propose.regen()
+    if(r.proposals)setProposals(r.proposals)
+    setProposalsLoading(false)
   }
 
   async function runSeed(){
@@ -634,6 +661,41 @@ export default function App(){
                 <div style={{color:'var(--acc2)',fontWeight:500,marginBottom:4}}>📊 Weekly review</div>
                 <div>{weeklyBrief.message||weeklyBrief.headline}</div>
                 {weeklyBrief.on_pace!==undefined&&<div style={{marginTop:4,color:weeklyBrief.on_pace?'var(--ok)':'var(--warn)'}}>{weeklyBrief.on_pace?'✓ On pace for goal':'⚠ Falling behind — adjust this week'}</div>}
+              </div>
+            )}
+            {proposals.length>0&&(
+              <div className="card">
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',borderBottom:'1px solid var(--gb2)',cursor:'pointer'}} onClick={()=>setProposalsOpen(o=>!o)}>
+                  <span style={{fontFamily:'var(--m)',fontSize:9,textTransform:'uppercase',letterSpacing:'.1em',color:'#7aaa8a'}}>COO proposals</span>
+                  <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                    <span style={{fontFamily:'var(--m)',fontSize:8.5,color:'var(--txt3)'}}>{proposals.length} suggested</span>
+                    <button onClick={e=>{e.stopPropagation();regenProposals()}} disabled={proposalsLoading} style={{fontFamily:'var(--m)',fontSize:8.5,padding:'2px 7px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',cursor:'pointer',color:'var(--txt3)',opacity:proposalsLoading?.5:1}}>
+                      {proposalsLoading?'…':'↺'}
+                    </button>
+                    <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{proposalsOpen?'▾':'▸'}</span>
+                  </div>
+                </div>
+                {proposalsOpen&&(
+                  <div style={{padding:'6px 10px 10px',display:'flex',flexDirection:'column',gap:5}}>
+                    {proposals.map(p=>(
+                      <div key={p.id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 9px',borderRadius:'var(--r)',border:'1px dashed var(--gb2)',background:'rgba(122,170,138,0.04)'}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,color:'var(--txt)',marginBottom:3,fontFamily:'var(--f)'}}>{p.name}</div>
+                          <div style={{fontSize:9.5,color:'var(--txt3)',fontFamily:'var(--m)',lineHeight:1.5}}>{p.rationale}</div>
+                          <div style={{display:'flex',gap:4,marginTop:4,alignItems:'center'}}>
+                            <span style={{fontFamily:'var(--m)',fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(26,90,60,.1)',color:'#1a5a3c'}}>{p.q}</span>
+                            <span style={{fontFamily:'var(--m)',fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(122,170,138,.12)',color:'#3a5c47'}}>{p.cat}</span>
+                            <span style={{fontFamily:'var(--m)',fontSize:8,color:'var(--txt3)'}}>{p.blocks}×15min</span>
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:4,flexShrink:0,paddingTop:1}}>
+                          <button onClick={()=>acceptProposal(p)} style={{fontFamily:'var(--m)',fontSize:9,padding:'3px 8px',borderRadius:4,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'#0f6e56',cursor:'pointer'}}>+ Add</button>
+                          <button onClick={()=>dismissProposal(p)} style={{fontFamily:'var(--m)',fontSize:9,padding:'3px 7px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer'}}>Skip</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <MatrixCanvas tasks={tasks.filter(t=>t.status!=='wont_do')} onToggle={toggleTask}/>

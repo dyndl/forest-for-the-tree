@@ -40,6 +40,7 @@ export default function SettingsPanel() {
   const [ouraToken, setOuraToken] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [goalDraft, setGoalDraft] = useState('')
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setSettings(d.settings))
@@ -49,6 +50,20 @@ export default function SettingsPanel() {
   const set = (key, val) => setSettings(s => ({ ...s, [key]: val }))
   const setNotif = (key, val) => set('notification_prefs', { ...settings.notification_prefs, [key]: val })
   const setBudget = (key, val) => set('weekly_time_budget', { ...settings.weekly_time_budget, [key]: parseInt(val) || 0 })
+
+  const setLifeArea = (idx, field, val) =>
+    set('life_areas', (settings.life_areas || []).map((a, i) => i === idx ? { ...a, [field]: val } : a))
+  const addLifeArea = () =>
+    set('life_areas', [...(settings.life_areas || []), { key: '', label: '', emoji: '🎯', blocks: 4 }])
+  const removeLifeArea = (idx) =>
+    set('life_areas', (settings.life_areas || []).filter((_, i) => i !== idx))
+  const addGoal = () => {
+    if (!goalDraft.trim()) return
+    set('financial_goals', [...(settings.financial_goals || []), goalDraft.trim()])
+    setGoalDraft('')
+  }
+  const removeGoal = (idx) =>
+    set('financial_goals', (settings.financial_goals || []).filter((_, i) => i !== idx))
 
   async function save() {
     setSaving(true)
@@ -99,6 +114,67 @@ export default function SettingsPanel() {
           <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>COO notes about you</label>
           <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} value={settings.coo_notes || ''} onChange={e => set('coo_notes', e.target.value)} placeholder="Running notes the COO uses about your patterns, preferences, context…" />
         </div>
+      </Section>
+
+      <Section title="Career background">
+        <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Career outline</label>
+        <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={5} value={settings.outline || ''} onChange={e => set('outline', e.target.value)} placeholder="Paste your resume summary, LinkedIn About, or career history. The COO uses this for task proposals and life tree seeding." />
+      </Section>
+
+      <Section title="Life areas">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {(settings.life_areas || []).map((a, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input value={a.emoji || ''} onChange={e => setLifeArea(i, 'emoji', e.target.value)} style={{ ...inputStyle, width: 36, textAlign: 'center', padding: '6px 4px', marginTop: 0 }} maxLength={2} />
+              <input value={a.label || ''} onChange={e => setLifeArea(i, 'label', e.target.value)} style={{ ...inputStyle, flex: 1, marginTop: 0 }} placeholder="Label" />
+              <input type="number" min={1} max={20} value={a.blocks || 4} onChange={e => setLifeArea(i, 'blocks', parseInt(e.target.value) || 4)} style={{ ...inputStyle, width: 52, textAlign: 'center', marginTop: 0 }} />
+              <span style={{ ...mono, fontSize: 9, color: '#7aaa8a', width: 24, flexShrink: 0 }}>blk</span>
+              <button onClick={() => removeLifeArea(i)} style={{ background: 'transparent', border: 'none', color: '#8a2828', cursor: 'pointer', fontSize: 14, padding: '0 4px', flexShrink: 0 }}>×</button>
+            </div>
+          ))}
+          <button onClick={addLifeArea} style={{ alignSelf: 'flex-start', background: 'transparent', border: '1px dashed rgba(122,170,138,0.5)', borderRadius: 6, padding: '5px 12px', color: '#7aaa8a', fontSize: 11, cursor: 'pointer', fontFamily: 'Figtree, sans-serif' }}>+ Add area</button>
+        </div>
+      </Section>
+
+      <Section title="Rhythm & energy">
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Rhythm notes</label>
+          <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} value={settings.rhythm_notes || ''} onChange={e => set('rhythm_notes', e.target.value)} placeholder="e.g. Slow start before 9am, crash after 2pm, can't focus after big meals…" />
+        </div>
+        <Toggle label="ADHD-aware mode" value={!!settings.adhd_aware} onChange={v => set('adhd_aware', v)} />
+        <p style={{ fontSize: 10.5, color: '#7aaa8a', marginTop: 5, lineHeight: 1.5, margin: '5px 0 0' }}>Breaks tasks into ≤30 min chunks, protects focus context, names ADHD patterns explicitly.</p>
+      </Section>
+
+      <Section title="Financial goals">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {(settings.financial_goals || []).map((g, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(15,110,86,0.08)', border: '1px solid rgba(15,110,86,0.2)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#0f6e56' }}>
+              {g}
+              <button onClick={() => removeGoal(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8a2828', fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input style={{ ...inputStyle, marginTop: 0, flex: 1 }} value={goalDraft} onChange={e => setGoalDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGoal()} placeholder="e.g. Save $10k emergency fund" />
+          <button onClick={addGoal} disabled={!goalDraft.trim()} style={{ flexShrink: 0, background: 'rgba(26,90,60,0.1)', color: '#1a5a3c', border: '1px solid rgba(26,90,60,0.25)', borderRadius: 7, padding: '8px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'Figtree, sans-serif', opacity: goalDraft.trim() ? 1 : 0.5 }}>Add</button>
+        </div>
+      </Section>
+
+      <Section title="Relationships">
+        <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Contact seeds</label>
+        <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} value={settings.relationship_seeds || ''} onChange={e => set('relationship_seeds', e.target.value)} placeholder="Names of people to keep in orbit — e.g. Mom, Jake (recruiter at Stripe), Dr. Patel" />
+      </Section>
+
+      <Section title="Integrations">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: '#3a5c47' }}>Tier</span>
+          <span style={{ ...mono, fontSize: 11, color: '#182e22', fontWeight: 500 }}>{{ google: '🔵 Google', microsoft: '🟦 Microsoft', zero: '🖥️ Local only' }[settings.integration_tier] || settings.integration_tier || '—'}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: '#3a5c47' }}>Add-ons</span>
+          <span style={{ ...mono, fontSize: 11, color: '#7aaa8a' }}>{(settings.addons || []).join(', ') || 'none'}</span>
+        </div>
+        <a href="/onboarding?refresh=true" style={{ fontSize: 11.5, color: '#1a5a3c', fontWeight: 500, textDecoration: 'none' }}>Re-run onboarding to change →</a>
       </Section>
 
       <Section title="Life tree background">
@@ -184,13 +260,6 @@ export default function SettingsPanel() {
             </div>
           </div>
         )}
-      </Section>
-
-      <Section title="Profile & COO">
-        <p style={{ fontSize: 12, color: '#5a7a68', lineHeight: 1.6, marginBottom: 14 }}>Update your career outline, life areas, agent network, and life tree. Your XP and streak are never reset.</p>
-        <a href="/onboarding?refresh=true" style={{ display: 'block', background: '#1a5a3c', color: '#fff', borderRadius: 7, padding: '10px 16px', fontSize: 12.5, fontWeight: 600, fontFamily: 'Figtree, sans-serif', textDecoration: 'none', textAlign: 'center' }}>
-          Update profile &amp; COO →
-        </a>
       </Section>
 
       <Section title="Account">

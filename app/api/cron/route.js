@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getFeatureFlags } from '@/lib/integrations'
-import { generateMorningBriefWithOura, runAgentBrief } from '@/lib/coo'
+import { generateMorningBriefWithOura, runAgentBrief, generateTaskProposals } from '@/lib/coo'
 import { getTodayEvents, getImportantEmails, clearCOOEvents, writeCOOScheduleToCalendar, writeUrgentAlert, getRelationshipContacts, getUpcomingBirthdays, getOverdueContacts } from '@/lib/google'
 import { getOuraMorningContext } from '@/lib/oura'
 import { generateRelationshipBrief } from '@/lib/coo'
@@ -112,6 +112,21 @@ async function runMorning(userId) {
   }
 
   await supabaseAdmin.from('schedules').upsert(record, { onConflict: 'user_id,date' })
+
+  // Regenerate COO task proposals (non-blocking)
+  generateTaskProposals({
+    emails, calendarEvents, tasks,
+    roadmap: userCtx?.roadmap || '',
+    outline: userCtx?.outline || '',
+    lifeAreas: userCtx?.life_areas || [],
+    adhdAware: userCtx?.adhd_aware || false,
+  }).then(proposals => {
+    if (proposals?.length) {
+      return supabaseAdmin.from('user_context')
+        .update({ background_proposals: proposals, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
+    }
+  }).catch(() => {})
 
   let eventsCreated = 0
   if (tokenRow?.access_token) {
