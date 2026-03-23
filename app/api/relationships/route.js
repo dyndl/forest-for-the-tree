@@ -3,6 +3,7 @@ import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getRelationshipContacts, getUpcomingBirthdays, getOverdueContacts, updateContactLastContact } from '@/lib/google'
 import { generateRelationshipBrief } from '@/lib/coo'
+export const dynamic = 'force-dynamic'
 
 export async function GET(req) {
   const session = await getServerSession(authOptions)

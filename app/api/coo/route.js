@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns } from '@/lib/coo'
+export const dynamic = 'force-dynamic'
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 

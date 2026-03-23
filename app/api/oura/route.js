@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getOuraMorningContext, validateOuraToken, refreshOuraToken } from '@/lib/oura'
+export const dynamic = 'force-dynamic'
 
 // GET — fetch latest Oura data (cached)
 export async function GET(req) {

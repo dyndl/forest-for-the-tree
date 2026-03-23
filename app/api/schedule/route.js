@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateMorningBriefWithOura, assessVetoImpact } from '@/lib/coo'
 import { getTodayEvents, getImportantEmails } from '@/lib/google'
 import { getOuraMorningContext, refreshOuraToken } from '@/lib/oura'
+export const dynamic = 'force-dynamic'
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 function tomorrowKey() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) }

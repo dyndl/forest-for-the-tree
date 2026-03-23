@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+export const dynamic = 'force-dynamic'
 
 /**
  * Fetch the best tree/species photo from Wikipedia for a given species name.

@@ -3,6 +3,7 @@ import { writeContextFile } from '@/lib/context-storage'
 import { getFeatureFlags } from '@/lib/integrations'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+export const dynamic = 'force-dynamic'
 
 const DEFAULTS = {
   roadmap: '',

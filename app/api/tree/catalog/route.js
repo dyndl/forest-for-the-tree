@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+export const dynamic = 'force-dynamic'
 
 /** Public species catalog for Life tree settings (no user data). */
 export async function GET() {

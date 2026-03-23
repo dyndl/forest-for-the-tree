@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+export const dynamic = 'force-dynamic'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 
