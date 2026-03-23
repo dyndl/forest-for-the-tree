@@ -19,7 +19,8 @@ export async function POST(req) {
   if (!session?.user?.email) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const { force } = await req.json().catch(() => ({}))
+  const body = await req.json().catch(() => ({}))
+  const force = body.force
 
   // Skip if already seeded unless forced
   if (!force) {
@@ -38,14 +39,14 @@ export async function POST(req) {
     .eq('user_id', userId)
     .maybeSingle()
 
-  const outline = ctx?.outline || ''
+  const outline = body.outline || ctx?.outline || ctx?.coo_notes || ''
   const roadmap = ctx?.roadmap || ''
-  const relSeeds = ctx?.relationship_seeds || ''
+  const relSeeds = body.relationship_seeds || ctx?.relationship_seeds || ''
   const lifeAreas = Array.isArray(ctx?.life_areas)
     ? ctx.life_areas.map(a => a.label || a).join(', ')
     : ''
 
-  if (!outline && !relSeeds) return Response.json({ skipped: true, reason: 'no context' })
+  if (!outline && !relSeeds) return Response.json({ skipped: true, reason: 'no_context' })
 
   // Fetch birth year from tree_species
   const { data: sp } = await supabaseAdmin

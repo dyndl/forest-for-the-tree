@@ -123,6 +123,7 @@ export default function App(){
   const tierRefs=useRef({})
   const[reevalOpen,setReevalOpen]=useState(false)
   const[seedLoading,setSeedLoading]=useState(false)
+  const[seedResult,setSeedResult]=useState(null)
   const[reevalCtx,setReevalCtx]=useState('')
   const[reevalLoading,setReevalLoading]=useState(false)
   const[reevalResult,setReevalResult]=useState(null)
@@ -253,10 +254,22 @@ export default function App(){
 
   async function runSeed(){
     setSeedLoading(true)
+    setSeedResult(null)
     try{
-      await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
-      await loadTree()
-    }catch{}
+      const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
+      const json=await res.json()
+      if(json.skipped){
+        setSeedResult({ok:false,msg:`Skipped: ${json.reason==='no_context'?'no outline found in your profile — fill in onboarding first':json.reason}`})
+      } else if(json.ok){
+        await loadTree()
+        const s=json.seeded
+        setSeedResult({ok:true,msg:`Seeded ${s.branches}b · ${s.rings}r · ${s.roots}rt · ${s.relationships}rel`})
+      } else {
+        setSeedResult({ok:false,msg:json.error||'Unknown error'})
+      }
+    }catch(e){
+      setSeedResult({ok:false,msg:'Network error'})
+    }
     setSeedLoading(false)
   }
 
@@ -587,6 +600,7 @@ export default function App(){
                         <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid rgba(0,0,0,.07)'}}>
                           <div style={{fontFamily:'var(--m)',fontSize:8.5,color:'#7aaa8a',marginBottom:5}}>Rebuild tree from career outline</div>
                           <button onClick={runSeed} disabled={seedLoading} style={{width:'100%',padding:'5px 0',borderRadius:6,border:'1px solid rgba(0,0,0,.08)',background:'#fff',color:'#3a5c47',fontFamily:'var(--m)',fontSize:9,cursor:'pointer',opacity:seedLoading?.6:1}}>{seedLoading?'Re-seeding…':'↺ Re-seed branches, roots & relationships'}</button>
+                          {seedResult&&<div style={{marginTop:5,fontFamily:'var(--m)',fontSize:8,color:seedResult.ok?'#3a7d44':'#b94a3a',lineHeight:1.4}}>{seedResult.msg}</div>}
                         </div>
                       </div>
                     )}
