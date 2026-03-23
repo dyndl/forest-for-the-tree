@@ -256,12 +256,16 @@ export default function App(){
     setSeedLoading(true)
     setSeedResult(null)
     try{
-      const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
+      const attachText=reevalAttachments.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n')
+      const seedOutline=reevalCtx+(attachText?'\n\n'+attachText:'')
+      const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(seedOutline.trim()&&{outline:seedOutline})})})
       const json=await res.json()
       if(json.skipped){
         const d=json.debug||{}
         setSeedResult({ok:false,msg:`Skipped (${json.reason}). outline:${d.outline_chars||0}ch, relseeds:${d.relseeds_chars||0}ch, coo_notes:${d.has_coo_notes}`})
       } else if(json.ok){
+        // Persist outline to user_context if we had to supply it from the textarea
+        if(seedOutline.trim()) fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline:seedOutline})}).catch(()=>{})
         await loadTree()
         const s=json.seeded; const d=json.debug||{}
         setSeedResult({ok:true,msg:`Seeded ${s.branches}b·${s.rings}r·${s.roots}rt·${s.relationships}rel (outline:${d.outline_chars}ch, errs:${d.insert_errors})`})
