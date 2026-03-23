@@ -78,7 +78,7 @@ export default function SettingsPage() {
   )
 
   return (
-    <div style={{ overflowY: 'auto', flex: 1, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{ height: '100%', overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 0, boxSizing: 'border-box' }}>
 
       <Section title="COO Profile">
         <div style={{ marginBottom: 12 }}>
