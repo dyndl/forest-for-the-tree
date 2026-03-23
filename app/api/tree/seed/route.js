@@ -46,7 +46,7 @@ export async function POST(req) {
     ? ctx.life_areas.map(a => a.label || a).join(', ')
     : ''
 
-  if (!outline && !relSeeds) return Response.json({ skipped: true, reason: 'no_context' })
+  if (!outline && !relSeeds) return Response.json({ skipped: true, reason: 'no_context', debug: { outline_chars: 0, relseeds_chars: 0, has_coo_notes: !!(ctx?.coo_notes) } })
 
   // Fetch birth year from tree_species
   const { data: sp } = await supabaseAdmin
@@ -194,5 +194,6 @@ Respond ONLY with valid JSON:
       relationships: relationships.length,
       legacies: legacies.length,
     },
+    debug: { outline_chars: outline.length, relseeds_chars: relSeeds.length, insert_errors: errors.length },
   })
 }

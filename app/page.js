@@ -259,11 +259,12 @@ export default function App(){
       const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
       const json=await res.json()
       if(json.skipped){
-        setSeedResult({ok:false,msg:`Skipped: ${json.reason==='no_context'?'no outline found in your profile — fill in onboarding first':json.reason}`})
+        const d=json.debug||{}
+        setSeedResult({ok:false,msg:`Skipped (${json.reason}). outline:${d.outline_chars||0}ch, relseeds:${d.relseeds_chars||0}ch, coo_notes:${d.has_coo_notes}`})
       } else if(json.ok){
         await loadTree()
-        const s=json.seeded
-        setSeedResult({ok:true,msg:`Seeded ${s.branches}b · ${s.rings}r · ${s.roots}rt · ${s.relationships}rel`})
+        const s=json.seeded; const d=json.debug||{}
+        setSeedResult({ok:true,msg:`Seeded ${s.branches}b·${s.rings}r·${s.roots}rt·${s.relationships}rel (outline:${d.outline_chars}ch, errs:${d.insert_errors})`})
       } else {
         setSeedResult({ok:false,msg:json.error||'Unknown error'})
       }
