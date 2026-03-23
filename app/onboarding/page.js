@@ -164,7 +164,7 @@ function ProgressDots({ step }) {
 }
 
 // ══ STEP 1: WELCOME + INTEGRATION TIER ════════════════════════════════════════
-function WelcomeStep({ data, onChange, onNext, onRestore }) {
+function WelcomeStep({ data, onChange, onNext, onRestore, isRefresh }) {
   const tier = data.integration_tier || 'google'
   const addons = data.addons || []
   const toggleAddon = (id) =>
@@ -177,12 +177,12 @@ function WelcomeStep({ data, onChange, onNext, onRestore }) {
   return (
     <div>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <div style={{ fontSize: 36, marginBottom: 8 }}>🌲</div>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>{isRefresh ? '🌳' : '🌲'}</div>
         <h1 style={{ ...serif, fontSize: 26, color: '#182e22', marginBottom: 6, fontStyle: 'italic' }}>
-          Forest for the Tree
+          {isRefresh ? 'Update your profile' : 'Forest for the Tree'}
         </h1>
         <p style={{ ...mono, fontSize: 9, color: '#7aaa8a', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          Your autonomous life COO
+          {isRefresh ? 'REFRESH YOUR COO' : 'Your autonomous life COO'}
         </p>
       </div>
 
@@ -1338,6 +1338,7 @@ const DEFAULT_FORM = {
 function OnboardingPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
+  const isRefresh = searchParams.get('refresh') === 'true'
   const [step, setStep]               = useState('welcome')
   const [saving, setSaving]           = useState(false)
   const [saveError, setSaveError]     = useState(false)
@@ -1374,8 +1375,8 @@ function OnboardingPage() {
         const res = await fetch('/api/settings')
         if (res.ok) {
           const { settings } = await res.json()
-          // If already fully onboarded, send to app
-          if (settings?.onboarding_complete) {
+          // If already fully onboarded, send to app (skip in refresh mode)
+          if (!isRefresh && settings?.onboarding_complete) {
             router.replace('/')
             return
           }
@@ -1383,7 +1384,7 @@ function OnboardingPage() {
           const hasData = settings?.roadmap || settings?.outline || settings?.life_areas?.length
             || (settings?.peak_hours && settings.peak_hours !== 'standard')
             || settings?.addons?.length || settings?.rhythm_notes || settings?.coo_notes
-          if (hasData) {
+          if (isRefresh || hasData) {
             setFormData(f => ({
               ...f,
               integration_tier:  settings.integration_tier  || f.integration_tier,
@@ -1514,7 +1515,7 @@ function OnboardingPage() {
         await fetch('/api/agents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agents: formData.pending_agents, replace_defaults: true }),
+          body: JSON.stringify({ agents: formData.pending_agents, ...(isRefresh ? { merge_mode: true } : { replace_defaults: true }) }),
         })
       }
 
@@ -1526,6 +1527,7 @@ function OnboardingPage() {
           outline:     formData.outline,
           roadmap:     formData.roadmap,
           life_areas:  formData.life_areas,
+          ...(isRefresh && { force: true, only_increase: true }),
         }),
       }).catch(() => {})
 
@@ -1533,7 +1535,7 @@ function OnboardingPage() {
       fetch('/api/tree/seed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(isRefresh ? { force: true, outline: formData.outline } : {}),
       }).catch(() => {})
 
       // Only clear and redirect after confirmed save
@@ -1553,7 +1555,7 @@ function OnboardingPage() {
       <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: 16, overflowY: 'auto' }}>
         <div style={glassCard}>
           {step !== 'welcome' && step !== 'done' && <ProgressDots step={step} />}
-          {step === 'welcome'       && <WelcomeStep data={formData} onChange={set} onNext={next} onRestore={restoreFromBackup} />}
+          {step === 'welcome'       && <WelcomeStep data={formData} onChange={set} onNext={next} onRestore={restoreFromBackup} isRefresh={isRefresh} />}
           {step === 'roadmap'       && <RoadmapStep       data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'areas'         && <AreasStep         data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'outline'       && <OutlineStep      data={formData} onChange={set} onNext={next} onBack={back} />}
@@ -1563,8 +1565,8 @@ function OnboardingPage() {
           {step === 'relationships' && <RelationshipsStep data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'done'          && <DoneStep          onFinish={finish} saving={saving} saveError={saveError} />}
 
-          {/* Start over — shown on all steps except done */}
-          {step !== 'done' && (
+          {/* Start over — shown on all steps except done, and not in refresh mode */}
+          {step !== 'done' && !isRefresh && (
             <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid rgba(122,170,138,0.12)', textAlign: 'center' }}>
               {!confirmReset ? (
                 <button

@@ -52,8 +52,8 @@ export async function POST(req) {
 
   // ── Bulk create from onboarding ─────────────────────────────────────────────
   if (body.agents && Array.isArray(body.agents)) {
-    const { agents, replace_defaults } = body
-    if (replace_defaults) {
+    const { agents, replace_defaults, merge_mode } = body
+    if (replace_defaults && !merge_mode) {
       // Remove any existing default/seeded agents before inserting onboarding ones
       await supabaseAdmin.from('agents').delete().eq('user_id', userId)
     }

@@ -131,6 +131,12 @@ Respond ONLY with JSON:
     return Response.json({ error: 'Evaluation failed to parse', skipped: true })
   }
 
+  const onlyIncrease = body.only_increase === true
+  if (onlyIncrease && species && tier <= species.current_tier) {
+    const row = catalog.find(c => c.tier === species.current_tier) || catalog[0]
+    return Response.json({ tier: species.current_tier, catalog_row: row, skipped: true, reason: 'tier unchanged (only_increase)' })
+  }
+
   // Find the closest catalog row at or below this tier
   const eligible = catalog.filter(c => c.tier <= tier).sort((a, b) => b.tier - a.tier)
   const catalogRow = eligible[0] || catalog[0]

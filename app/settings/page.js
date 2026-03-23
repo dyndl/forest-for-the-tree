@@ -201,6 +201,13 @@ export default function SettingsPage() {
         )}
       </Section>
 
+      <Section title="Profile & COO">
+        <p style={{ fontSize:12, color:'#5a7a68', lineHeight:1.6, marginBottom:14 }}>Update your career outline, life areas, agent network, and life tree. Your XP and streak are never reset.</p>
+        <a href="/onboarding?refresh=true" style={{ display:'block', background:'#1a5a3c', color:'#fff', border:'none', borderRadius:7, padding:'10px 16px', fontSize:12.5, fontWeight:600, cursor:'pointer', fontFamily:'Figtree, sans-serif', textDecoration:'none', textAlign:'center', marginBottom:12 }}>
+          Update profile &amp; COO →
+        </a>
+      </Section>
+
       <Section title="Account">
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
           <div style={{ width:36, height:36, borderRadius:'50%', background:'rgba(45,122,82,0.12)', border:'1px solid rgba(45,122,82,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:500, color:'#1a5a3c', flexShrink:0 }}>
