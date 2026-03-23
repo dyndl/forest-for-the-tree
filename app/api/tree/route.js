@@ -3,6 +3,8 @@ import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { galleryPoolForSpecies, pickDisplaySlug, resolveCatalogRow } from '@/lib/tree-display'
 
+export const dynamic = 'force-dynamic'
+
 const DEFAULT_SPECIES = {
   birth_year: 1990,
   current_tier: 1,
