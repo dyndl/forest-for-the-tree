@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse } from '@/lib/coo'
+import { getImportantEmails, getTodayEvents } from '@/lib/google'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
@@ -59,8 +60,18 @@ export async function POST(req) {
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
     result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap })
   } else {
-    // Free-form chat — catch-all for type:'chat' and any future types
-    result = await generateChatResponse({ userMessage, tasks, schedule, userCtx })
+    // Free-form chat — fetch live email + calendar context so the COO can reference them
+    let emails = [], calendarEvents = []
+    const tokenRow = await supabaseAdmin.from('user_tokens').select('access_token,refresh_token').eq('user_id', userId).maybeSingle().then(r => r.data)
+    if (tokenRow?.access_token) {
+      try {
+        ;[emails, calendarEvents] = await Promise.all([
+          getImportantEmails(tokenRow.access_token, tokenRow.refresh_token),
+          getTodayEvents(tokenRow.access_token, tokenRow.refresh_token),
+        ])
+      } catch {}
+    }
+    result = await generateChatResponse({ userMessage, tasks, schedule, userCtx, emails, calendarEvents })
   }
 
   return Response.json({ result })

@@ -70,7 +70,11 @@ export async function POST(req) {
   const { data: agentRow } = await supabaseAdmin.from('agents').select('*').eq('id', agentId).eq('user_id', userId).single()
   if (!agentRow) return Response.json({ error: 'Agent not found' }, { status: 404 })
 
-  const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey())).data || []
+  const [tasks, userCtxRow] = await Promise.all([
+    supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey()).then(r => r.data || []),
+    supabaseAdmin.from('user_context').select('goals').eq('user_id', userId).single().then(r => r.data),
+  ])
+  const goals = userCtxRow?.goals || []
 
   // Pull agent context (uploaded voice memos, files, notes)
   const { data: contextRows } = await supabaseAdmin
@@ -95,7 +99,7 @@ export async function POST(req) {
   // Mark thinking
   await supabaseAdmin.from('agents').update({ status: 'thinking' }).eq('id', agentId).eq('user_id', userId)
 
-  const result = await runAgentBrief({ agent: augmentedAgent, tasks, isSilent: silent })
+  const result = await runAgentBrief({ agent: augmentedAgent, tasks, goals, isSilent: silent })
 
   const updates = {
     status: result.urgent ? 'alert' : 'ok',

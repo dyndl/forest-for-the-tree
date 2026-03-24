@@ -75,8 +75,9 @@ export async function POST(req) {
 
   if (session.accessToken) {
     try {
+      const linkedAccounts = userCtx?.linked_accounts || []
       ;[calendarEvents, emails] = await Promise.all([
-        getTodayEvents(session.accessToken, session.refreshToken),
+        getTodayEvents(session.accessToken, session.refreshToken, linkedAccounts),
         getImportantEmails(session.accessToken, session.refreshToken),
       ])
     } catch {}

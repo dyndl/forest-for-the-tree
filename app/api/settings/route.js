@@ -94,6 +94,35 @@ export async function POST(req) {
   return Response.json({ settings: data })
 }
 
+// DELETE — full reset: wipes all user data, keeps account + connectors
+export async function DELETE(req) {
+  const session = await getServerSession(authOptions)
+  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = session.user.email
+
+  await Promise.all([
+    // Reset user_context to bare minimum
+    supabaseAdmin.from('user_context').upsert({
+      user_id: userId,
+      onboarding_complete: false,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' }),
+    // Wipe activity data
+    supabaseAdmin.from('tasks').delete().eq('user_id', userId),
+    supabaseAdmin.from('schedules').delete().eq('user_id', userId),
+    supabaseAdmin.from('agents').delete().eq('user_id', userId),
+    // Wipe tree data
+    supabaseAdmin.from('tree_branches').delete().eq('user_id', userId),
+    supabaseAdmin.from('tree_rings').delete().eq('user_id', userId),
+    supabaseAdmin.from('tree_roots').delete().eq('user_id', userId),
+    supabaseAdmin.from('tree_relationships').delete().eq('user_id', userId),
+    supabaseAdmin.from('tree_legacies').delete().eq('user_id', userId),
+    supabaseAdmin.from('tree_species').delete().eq('user_id', userId),
+  ])
+
+  return Response.json({ ok: true })
+}
+
 // PATCH — partial update (used by COO to write back patterns, notes)
 export async function PATCH(req) {
   const session = await getServerSession(authOptions)
