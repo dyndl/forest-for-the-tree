@@ -97,11 +97,11 @@ function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick}){
     ctx.setLineDash([])
 
     // Sub-zone labels — bottom of each quadrant
-    ctx.font='6.5px JetBrains Mono,monospace';ctx.textAlign='center'
+    ctx.font='bold 8.5px JetBrains Mono,monospace';ctx.textAlign='center'
     ;[0,qW].forEach(qx=>{
       ;[0,qH].forEach(qy=>{
         ZONE_LABELS.forEach((lbl,i)=>{
-          ctx.fillStyle='rgba(20,60,35,.22)'
+          ctx.fillStyle='rgba(20,60,35,.58)'
           ctx.fillText(lbl,qx+i*zW+zW/2,qy+qH-7)
         })
       })
