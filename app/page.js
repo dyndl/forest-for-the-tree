@@ -643,8 +643,8 @@ export default function App(){
   async function sendChat(){
     if(!chatMsg.trim())return
     const msg=chatMsg.trim();setChatMsg('');setChatLoading(true);setChatVisible(true)
-    setChatHistory(h=>[...h,{role:'user',content:msg}])
-    try{const{result}=await api.coo.checkin('chat',msg);if(result){const resp=result.message||result.headline||JSON.stringify(result);setChatHistory(h=>[...h,{role:'coo',content:resp}]);if(result.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}}catch{}
+    setChatHistory(h=>[...h.slice(-99),{role:'user',content:msg}])
+    try{const{result}=await api.coo.checkin('chat',msg);if(result){const resp=result.message||result.headline||JSON.stringify(result);setChatHistory(h=>[...h.slice(-99),{role:'coo',content:resp}]);if(result.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}}catch{}
     setChatLoading(false)
   }
 
