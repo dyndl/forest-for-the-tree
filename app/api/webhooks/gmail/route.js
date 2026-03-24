@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { getGmailHistory, writeUrgentAlert } from '@/lib/google'
+import { getGmailHistory, getMessageMetadata, writeUrgentAlert } from '@/lib/google'
 import { runAgentBrief } from '@/lib/coo'
 
 export const dynamic = 'force-dynamic'
@@ -58,12 +58,71 @@ export async function POST(req) {
     tokenRow.access_token, tokenRow.refresh_token, startId
   ).catch(() => [])
 
-  // Fire-and-forget agent checks when new mail arrives
+  // Fire-and-forget: scan for urgent job emails + run agent checks
   if (newMessageIds.length > 0) {
+    scanUrgentJobEmails(userId, tokenRow, newMessageIds).catch(() => {})
     runAgentChecks(userId, tokenRow).catch(() => {})
   }
 
   return new Response('ok', { status: 200 })
+}
+
+// ── JOB EMAIL KEYWORDS ─────────────────────────────────────────────────────────
+const JOB_SUBJECT_RE = /interview|phone\s+screen|technical\s+screen|offer|rejection|next\s+steps|moving\s+forward|availability|schedule\s+a\s+call|get\s+back\s+to\s+you|your\s+application|following\s+up|heard\s+back|excited\s+to|love\s+to\s+chat|loop\s+you\s+in/i
+const RESPOND_RE = /respond|reply|please\s+confirm|let\s+us\s+know|action\s+required|response\s+needed|following\s+up/i
+const NOREPLY_RE = /noreply|no-reply|donotreply|notifications@|alerts@|newsletter/i
+
+async function scanUrgentJobEmails(userId, tokenRow, messageIds) {
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Fetch existing tasks to avoid duplicates
+  const { data: existing } = await supabaseAdmin.from('tasks')
+    .select('name').eq('user_id', userId).eq('date', today)
+  const existingNames = new Set((existing || []).map(t => t.name.toLowerCase()))
+
+  for (const msgId of messageIds.slice(0, 10)) {
+    try {
+      const meta = await getMessageMetadata(tokenRow.access_token, tokenRow.refresh_token, msgId)
+      const { subject, from, labelIds } = meta
+
+      // Skip auto-generated/noreply senders
+      if (NOREPLY_RE.test(from)) continue
+
+      const isImportant = labelIds.includes('IMPORTANT') || labelIds.includes('STARRED')
+      const isJobRelated = JOB_SUBJECT_RE.test(subject)
+      const needsResponse = RESPOND_RE.test(subject) || isJobRelated
+
+      // Create a DO task only if Gmail flagged it important AND it's job-related
+      if (isImportant && isJobRelated) {
+        const taskName = `Reply: ${subject.slice(0, 60)}`
+        if (existingNames.has(taskName.toLowerCase())) continue
+
+        const fromAddress = from.match(/<([^>]+)>/) ? from.match(/<([^>]+)>/)[1] : from.split(' ').pop()
+        const notes = `From: ${from}\n\nSource: mailto:${fromAddress}`
+
+        await supabaseAdmin.from('tasks').insert({
+          user_id: userId,
+          name: taskName,
+          q: 'do',
+          cat: 'career',
+          blocks: 2,
+          who: 'me',
+          notes,
+          done: false,
+          date: today,
+          source: 'coo',
+        })
+
+        // Calendar alert so it appears within the hour
+        if (tokenRow.access_token && needsResponse) {
+          await writeUrgentAlert(
+            tokenRow.access_token, tokenRow.refresh_token,
+            'Job Email', `Action needed: ${subject}`
+          ).catch(() => {})
+        }
+      }
+    } catch { /* skip this message */ }
+  }
 }
 
 async function runAgentChecks(userId, tokenRow) {
