@@ -154,7 +154,7 @@ export async function POST(req) {
       cat: s.category || userCtx?.life_areas?.[0]?.key || 'admin',
       blocks: s.duration_blocks || 2,
       who: 'me',
-      notes: s.note || '',
+      notes: s.note && s.source_ref ? `${s.note}\n\nSource: ${s.source_ref}` : s.note || (s.source_ref ? `Source: ${s.source_ref}` : ''),
       done: false,
       date: planDate,
       status: 'proposed',

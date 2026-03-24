@@ -62,7 +62,11 @@ export async function PATCH(req) {
     const { data: inserted } = await supabaseAdmin.from('tasks').insert({
       user_id: userId, name: proposal.name, q: proposal.q || 'do',
       cat: proposal.cat || 'admin', blocks: proposal.blocks || 2,
-      who: 'me', notes: proposal.rationale || '', done: false,
+      who: 'me',
+      notes: proposal.rationale && proposal.source_ref
+        ? `${proposal.rationale}\n\nSource: ${proposal.source_ref}`
+        : proposal.rationale || (proposal.source_ref ? `Source: ${proposal.source_ref}` : ''),
+      done: false,
       date: todayKey(), source: 'coo_proposal',
     }).select().single()
     task = inserted

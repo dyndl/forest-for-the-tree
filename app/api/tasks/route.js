@@ -1,28 +1,33 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { createGoogleTask, completeGoogleTask, getGoogleTasks } from '@/lib/google'
+import { createGoogleTask, completeGoogleTask, getGoogleTasks, getImportantEmails, getTodayEvents } from '@/lib/google'
+import { enrichTaskNotes } from '@/lib/coo'
 export const dynamic = 'force-dynamic'
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10)
 }
 
-// GET /api/tasks — fetch today's tasks
+// GET /api/tasks — fetch tasks by exact date or date range (?from=&to=)
 export async function GET(req) {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const date = new URL(req.url).searchParams.get('date') || todayKey()
+  const params = new URL(req.url).searchParams
+  const from = params.get('from')
+  const to = params.get('to')
+  const date = params.get('date')
 
-  const { data, error } = await supabaseAdmin
-    .from('tasks')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('date', date)
-    .order('created_at', { ascending: true })
+  let query = supabaseAdmin.from('tasks').select('*').eq('user_id', userId)
+  if (from && to) {
+    query = query.gte('date', from).lte('date', to)
+  } else {
+    query = query.eq('date', date || todayKey())
+  }
 
+  const { data, error } = await query.order('date', { ascending: true }).order('created_at', { ascending: true })
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ tasks: data })
 }
@@ -51,15 +56,42 @@ export async function POST(req) {
   const { data, error } = await supabaseAdmin.from('tasks').insert(task).select().single()
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  // Sync to Google Tasks async (don't block response)
-  if (session.accessToken) {
-    try {
-      const { listId } = await getGoogleTasks(session.accessToken, session.refreshToken)
-      if (listId) {
-        await createGoogleTask(session.accessToken, session.refreshToken, listId, task)
-      }
-    } catch {}
-  }
+  // Async: enrich notes with source evidence + sync to Google Tasks (don't block response)
+  ;(async () => {
+    let emails = [], calendarEvents = []
+    const accessToken = session.accessToken
+    const refreshToken = session.refreshToken
+
+    if (accessToken) {
+      try {
+        ;[emails, calendarEvents] = await Promise.all([
+          getImportantEmails(accessToken, refreshToken),
+          getTodayEvents(accessToken, refreshToken),
+        ])
+      } catch {}
+    }
+
+    // Enrich notes only for manual tasks with no pre-filled notes
+    if (!task.notes && task.source === 'manual') {
+      try {
+        const enriched = await enrichTaskNotes({ taskName: task.name, emails, calendarEvents })
+        if (enriched.note || enriched.source_ref) {
+          const notes = enriched.note && enriched.source_ref
+            ? `${enriched.note}\n\nSource: ${enriched.source_ref}`
+            : enriched.note || `Source: ${enriched.source_ref}`
+          await supabaseAdmin.from('tasks').update({ notes }).eq('id', data.id)
+        }
+      } catch {}
+    }
+
+    // Sync to Google Tasks
+    if (accessToken) {
+      try {
+        const { listId } = await getGoogleTasks(accessToken, refreshToken)
+        if (listId) await createGoogleTask(accessToken, refreshToken, listId, task)
+      } catch {}
+    }
+  })()
 
   return Response.json({ task: data })
 }
