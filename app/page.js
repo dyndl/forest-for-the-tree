@@ -421,6 +421,10 @@ export default function App(){
   const[logCat,setLogCat]=useState('admin')
   const[logSubmitting,setLogSubmitting]=useState(false)
   const[logXp,setLogXp]=useState(null)
+  const[doneChat,setDoneChat]=useState('')
+  const[doneChatLoading,setDoneChatLoading]=useState(false)
+  const[histTasks,setHistTasks]=useState(null)
+  const[histLoading,setHistLoading]=useState(false)
   const[matrixPanel,setMatrixPanel]=useState(null)
   const[matrixEdit,setMatrixEdit]=useState(null)
   const[vetoPanel,setVetoPanel]=useState(null)
@@ -466,6 +470,17 @@ export default function App(){
 
   // Auto-clear undo toast after 5s
   useEffect(()=>{if(!undoInfo)return;const t=setTimeout(()=>setUndoInfo(null),5000);return()=>clearTimeout(t)},[undoInfo])
+
+  // Load 30-day done history when Done list tab first opens
+  useEffect(()=>{
+    if(view!=='done'||histTasks!==null||histLoading)return
+    setHistLoading(true)
+    const from=new Date(Date.now()-30*86400000).toISOString().slice(0,10)
+    const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10)
+    api.tasks.list(from,yesterday).then(r=>{
+      setHistTasks((r.tasks||[]).filter(t=>t.done))
+    }).catch(()=>setHistTasks([])).finally(()=>setHistLoading(false))
+  },[view,histTasks,histLoading])
 
   // Realtime subscriptions
   useRealtime({
@@ -738,6 +753,20 @@ export default function App(){
     setLogSubmitting(false)
   }
 
+  async function sendDoneChat(who){
+    if(!doneChat.trim())return
+    const msg=doneChat.trim();setDoneChat('');setDoneChatLoading(true)
+    try{
+      const r=await api.tasks.create({name:msg,blocks:1,q:'do',cat:'admin',source:'manual_log',done:true,who:who||'me'})
+      if(r.task){
+        setTasks(ts=>[...ts,r.task])
+        if(r.xp)setLogXp(r.xp)
+        timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))
+      }
+    }catch{}
+    setDoneChatLoading(false)
+  }
+
   async function sendChat(){
     if(!chatMsg.trim())return
     const msg=chatMsg.trim();setChatMsg('');setChatLoading(true);setChatVisible(true)
@@ -878,11 +907,12 @@ export default function App(){
     </div></>
   )
 
-  const viewTitle={home:"Today's field",schedule:'COO Schedule',agents:'Agent network',log:'Performance log',settings:'Settings',tree:'Life tree',goals:'Goals'}
+  const viewTitle={done:'Done list',home:"Today's field",schedule:'COO Schedule',agents:'Agent network',log:'Performance log',settings:'Settings',tree:'Life tree',goals:'Goals'}
   const statusColor={idle:'#b0ccb8',thinking:'#b85c00',alert:'#8a2828',ok:'#0f6e56'}
   const pendingSlots=schedule?.slots?.filter(s=>s.taskId&&(s.state==='pending'||s.state==='optional')).length||0
   const alertAgents=agents.filter(a=>a.status==='alert').length
   const navItems=[
+    {id:'done',icon:'✓',label:'Done list',badge:doneTasks.length,bc:'var(--ok)'},
     {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
     {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
@@ -926,14 +956,18 @@ export default function App(){
           ):null}
         </div>
         <div style={{flex:1,padding:'10px 8px',display:'flex',flexDirection:'column',gap:2}}>
-          {navItems.map(item=>(
+          {navItems.map(item=>{
+            const active=view===item.id
+            return(
             <button key={item.id} onClick={()=>{setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule();if(item.id==='tree'&&!treeData)loadTree()}}
-              style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:'var(--r)',cursor:'pointer',color:view===item.id?'var(--acc2)':'var(--txt2)',fontSize:14.5,border:view===item.id?'1px solid rgba(45,122,82,0.35)':'1px solid transparent',background:view===item.id?'rgba(45,122,82,0.10)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:view===item.id?600:400,boxShadow:view===item.id?'inset 3px 0 0 var(--acc2)':'none',transition:'all .13s'}}>
-              <span style={{fontSize:16,width:17,textAlign:'center'}}>{item.icon}</span>
+              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px 7px 7px',borderRadius:'var(--r)',cursor:'pointer',color:active?'#fff':'var(--txt2)',fontSize:14,border:'none',background:active?'var(--acc2)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:active?600:400,transition:'all .13s',position:'relative'}}>
+              <span style={{width:4,position:'absolute',left:0,top:'20%',bottom:'20%',borderRadius:'0 3px 3px 0',background:active?'rgba(255,255,255,0.6)':'transparent',transition:'all .13s'}}/>
+              <span style={{fontSize:15,width:18,textAlign:'center',flexShrink:0}}>{item.icon}</span>
               <span style={{flex:1}}>{item.label}</span>
-              {item.badge>0&&<span style={{fontFamily:'var(--m)',fontSize:10.5,background:item.bc,color:'#fff',padding:'1px 5px',borderRadius:9}}>{item.badge}</span>}
+              {item.badge>0&&<span style={{fontFamily:'var(--m)',fontSize:10,background:active?'rgba(255,255,255,0.25)':'rgba(0,0,0,0.15)',color:active?'#fff':item.bc==='var(--ok)'?'var(--ok)':'var(--danger)',padding:'1px 5px',borderRadius:9,border:active?'none':`1px solid ${item.bc}`}}>{item.badge}</span>}
             </button>
-          ))}
+            )
+          })}
         </div>
         <div style={{padding:'10px 8px',borderTop:'1px solid var(--gb2)'}}>
           <div style={{padding:'8px 10px',background:'var(--glass2)',borderRadius:'var(--r)',border:'1px solid var(--gb2)'}}>
@@ -1135,6 +1169,151 @@ export default function App(){
             })()}
           </div>
           :<><div className="scroll">
+          {/* DONE LIST */}
+          {view==='done'&&(()=>{
+            const COO_SOURCES=['coo','coo_proposal']
+            const isCoo=t=>COO_SOURCES.includes(t.source)
+            const groups=[
+              {id:'log',label:'Logged wins',sub:'Added by you — off the COO plan',color:'var(--ok)',bg:'rgba(15,110,86,0.07)',bd:'rgba(15,110,86,0.2)',tasks:doneTasks.filter(t=>t.source==='manual_log')},
+              {id:'u_u',label:'You entered → You did',sub:'Tasks you set, you completed',color:'var(--acc2)',bg:'rgba(26,90,60,0.06)',bd:'rgba(26,90,60,0.18)',tasks:doneTasks.filter(t=>t.source==='manual'&&t.who==='me')},
+              {id:'c_u',label:'COO entered → You did',sub:'COO proposed, you executed',color:'var(--sch)',bg:'var(--sch-bg)',bd:'var(--sch-bd)',tasks:doneTasks.filter(t=>isCoo(t)&&t.who==='me')},
+              {id:'c_c',label:'COO entered → COO / team did',sub:'Fully handled without you',color:'var(--del)',bg:'var(--del-bg)',bd:'var(--del-bd)',tasks:doneTasks.filter(t=>isCoo(t)&&t.who!=='me')},
+              {id:'u_o',label:'You entered → Someone else did',sub:'You delegated a task you set',color:'var(--do)',bg:'var(--do-bg)',bd:'var(--do-bd)',tasks:doneTasks.filter(t=>t.source==='manual'&&t.who!=='me')},
+            ]
+            const totalMin=doneTasks.reduce((s,t)=>s+t.blocks*15,0)
+            const totalHrs=Math.round(totalMin/60*10)/10
+            // Historical (prev 30 days, excl today)
+            const histTotal=(histTasks||[]).length
+            const histMin=(histTasks||[]).reduce((s,t)=>s+t.blocks*15,0)
+            const histHrs=Math.round(histMin/60*10)/10
+            const histByDay={}
+            ;(histTasks||[]).forEach(t=>{if(!histByDay[t.date])histByDay[t.date]=0;histByDay[t.date]++})
+            const histActiveDays=Object.keys(histByDay).length
+            // Top category today
+            const catCounts=doneTasks.reduce((acc,t)=>{acc[t.cat]=(acc[t.cat]||0)+1;return acc},{})
+            const topCat=Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0]?.[0]
+            return(<>
+              {/* Progress tally */}
+              <div className="card">
+                <div className="card-hdr">
+                  <span className="card-title">Progress tally</span>
+                  {histLoading&&<span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>Loading history…</span>}
+                </div>
+                <div style={{padding:'10px 13px 12px'}}>
+                  {/* Today row */}
+                  <div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Today</div>
+                  <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:10}}>
+                    {[
+                      {v:doneTasks.length,l:'tasks done',c:'var(--ok)'},
+                      {v:totalHrs+'h',l:'invested',c:'var(--del)'},
+                      ...(topCat?[{v:topCat,l:'top area',c:'var(--acc2)'}]:[]),
+                    ].map(({v,l,c})=>(
+                      <div key={l} style={{minWidth:56,padding:'6px 10px',borderRadius:'var(--r)',background:'rgba(20,60,35,.04)',border:'1px solid rgba(20,60,35,.08)'}}>
+                        <div style={{fontFamily:'var(--m)',fontSize:17,fontWeight:600,color:c,lineHeight:1}}>{v}</div>
+                        <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:3,textTransform:'uppercase',letterSpacing:'.08em'}}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* 30-day row */}
+                  {(histTotal>0||histLoading)&&(
+                    <div style={{paddingTop:8,borderTop:'1px solid var(--gb2)'}}>
+                      <div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Last 30 days</div>
+                      {histLoading
+                        ?<div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)'}}>Loading…</div>
+                        :<div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                          {[
+                            {v:histTotal,l:'tasks',c:'var(--acc2)'},
+                            {v:histHrs+'h',l:'invested',c:'var(--del)'},
+                            {v:histActiveDays,l:'active days',c:'var(--ok)'},
+                            {v:histTotal?Math.round(histTotal/Math.max(histActiveDays,1)*10)/10:'—',l:'avg/day',c:'var(--sch)'},
+                          ].map(({v,l,c})=>(
+                            <div key={l} style={{minWidth:56,padding:'5px 9px',borderRadius:'var(--r)',background:'rgba(20,60,35,.03)',border:'1px solid rgba(20,60,35,.06)'}}>
+                              <div style={{fontFamily:'var(--m)',fontSize:15,fontWeight:600,color:c,lineHeight:1}}>{v}</div>
+                              <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:3,textTransform:'uppercase',letterSpacing:'.08em'}}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
+                      }
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* COO quick chat log */}
+              <div className="card" style={{border:'1px solid rgba(26,95,168,0.22)'}}>
+                <div className="card-hdr">
+                  <span className="card-title">Tell COO what got done</span>
+                  <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>COO categorizes it</span>
+                </div>
+                <div style={{padding:'10px 13px 12px'}}>
+                  <input value={doneChat} onChange={e=>setDoneChat(e.target.value)}
+                    onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&!doneChatLoading&&doneChat.trim()&&sendDoneChat('me')}
+                    placeholder="e.g. Fixed the auth bug · John sent the report · Finished client deck"
+                    className="fm-in" style={{width:'100%',marginBottom:8}}/>
+                  <div style={{display:'flex',gap:7}}>
+                    <button onClick={()=>sendDoneChat('me')} disabled={doneChatLoading||!doneChat.trim()} className="btn-primary" style={{flex:1}}>
+                      {doneChatLoading?'…':'✓ I did it'}
+                    </button>
+                    <button onClick={()=>sendDoneChat('team')} disabled={doneChatLoading||!doneChat.trim()} className="btn-ghost" style={{flex:1}}>
+                      {doneChatLoading?'…':'→ Someone else did it'}
+                    </button>
+                  </div>
+                  {logXp&&<div style={{marginTop:7,fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',animation:'fadeUp .3s'}}>+{logXp.h_gained} XP · streak {logXp.streak} day{logXp.streak!==1?'s':''} 🌱{logXp.tier_up?` → ${logXp.tier_up.species}!`:''}</div>}
+                </div>
+              </div>
+              {/* Quick log */}
+              <div className="card" style={{border:'2px solid rgba(15,110,86,0.3)'}}>
+                <div className="card-hdr"><span className="card-title">Log a win</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{doneTasks.length} done · {totalMin}m total</span></div>
+                <div style={{padding:'10px 13px',display:'flex',gap:7,flexWrap:'wrap',alignItems:'flex-end'}}>
+                  <input value={logName} onChange={e=>setLogName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&logDoneWork()} placeholder="What did you get done?" className="fm-in" style={{flex:'1 1 160px',minWidth:0}}/>
+                  <select value={logCat} onChange={e=>setLogCat(e.target.value)} className="fm-sel" style={{width:88,flexShrink:0}}>
+                    {(settings?.life_areas?.length?settings.life_areas.filter(a=>a.key).map(a=>a.key):['career','admin','learning','fitness','family','finance']).map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select value={logBlocks} onChange={e=>setLogBlocks(Number(e.target.value))} className="fm-sel" style={{width:82,flexShrink:0}}>
+                    {[[1,'15 min'],[2,'30 min'],[3,'45 min'],[4,'1 hr'],[6,'1.5 hr'],[8,'2 hr']].map(([b,l])=><option key={b} value={b}>{l}</option>)}
+                  </select>
+                  <button onClick={logDoneWork} disabled={logSubmitting||!logName.trim()} className="btn-primary" style={{flexShrink:0}}>
+                    {logSubmitting?'…':'Log it ✓'}
+                  </button>
+                </div>
+                {logXp&&<div style={{padding:'0 13px 10px',fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',animation:'fadeUp .3s'}}>+{logXp.h_gained} XP · streak {logXp.streak} day{logXp.streak!==1?'s':''} 🌱{logXp.tier_up?` → ${logXp.tier_up.species}!`:''}</div>}
+              </div>
+              {/* Groups */}
+              {groups.map(g=>{
+                if(!g.tasks.length)return null
+                return(
+                  <div key={g.id} className="card">
+                    <div style={{padding:'8px 13px 6px',borderBottom:`1px solid ${g.bd}`,background:g.bg,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontFamily:'var(--m)',fontSize:11,fontWeight:600,color:g.color}}>{g.label}</div>
+                        <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:1}}>{g.sub}</div>
+                      </div>
+                      <span style={{fontFamily:'var(--m)',fontSize:13,fontWeight:600,color:g.color}}>{g.tasks.length}</span>
+                    </div>
+                    {g.tasks.map(t=>(
+                      <div key={t.id} style={{display:'flex',alignItems:'center',gap:9,padding:'8px 13px',borderBottom:'1px solid rgba(0,0,0,.04)'}}>
+                        <span style={{color:'var(--ok)',fontSize:13,flexShrink:0}}>✓</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:14,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+                          {t.notes&&<div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.notes.split('\n')[0]}</div>}
+                        </div>
+                        <div style={{display:'flex',gap:5,flexShrink:0}}>
+                          <span className={`pill pc-${t.cat}`}>{t.cat}</span>
+                          <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',padding:'2px 5px'}}>{t.blocks*15}m</span>
+                          {t.who!=='me'&&<span style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 5px',borderRadius:3,background:'rgba(26,95,168,.08)',color:'var(--sch)'}}>{t.who}</span>}
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{padding:'5px 13px',fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',textAlign:'right'}}>{g.tasks.reduce((s,t)=>s+t.blocks*15,0)} min</div>
+                  </div>
+                )
+              })}
+              {doneTasks.length===0&&<div className="card" style={{padding:'32px 20px',textAlign:'center'}}>
+                <div style={{fontSize:36,marginBottom:10}}>✓</div>
+                <div style={{fontFamily:'var(--s)',fontSize:20,fontStyle:'italic',color:'var(--txt2)',marginBottom:8}}>Nothing logged yet today</div>
+                <p style={{fontSize:14,color:'var(--txt3)',lineHeight:1.6}}>Complete tasks from the Matrix or log a win above — every completed block grows your tree.</p>
+              </div>}
+            </>)
+          })()}
           {/* HOME */}
           {view==='home'&&<>
             {!helpDismissed.home&&<div style={{padding:'10px 14px',background:'rgba(26,90,60,0.07)',border:'1px solid rgba(26,90,60,0.15)',borderRadius:'var(--r2)',display:'flex',gap:10,alignItems:'flex-start'}}>
