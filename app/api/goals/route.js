@@ -64,7 +64,22 @@ export async function POST(req) {
     })
     if (!proposed.length) return Response.json({ goals: existing, seeded: false })
 
-    const newGoals = proposed.map((g, i) => ({
+    // Deduplicate by title — never add a goal whose title closely matches an existing one
+    const existingTitles = new Set(existing.map(g => g.title.toLowerCase().trim()))
+    const deduped = proposed.filter(g => {
+      const t = (g.title || '').toLowerCase().trim()
+      if (!t) return false
+      // Exact or near-exact match
+      if (existingTitles.has(t)) return false
+      // Substring containment check (e.g. "Land a job" vs "Land a data science job")
+      for (const et of existingTitles) {
+        if (et.includes(t) || t.includes(et)) return false
+      }
+      return true
+    })
+    if (!deduped.length) return Response.json({ goals: existing, seeded: false })
+
+    const newGoals = deduped.map((g, i) => ({
       id: `goal_${Date.now()}_${i}`,
       title: g.title,
       description: g.description || '',
@@ -127,7 +142,8 @@ export async function PATCH(req) {
   let goals = ctx?.goals || []
 
   if (action === 'delete') {
-    goals = goals.filter(g => g.id !== id)
+    // Soft-delete: archive so the goal is excluded from re-seeding but not lost
+    goals = goals.map(g => g.id !== id ? g : { ...g, status: 'archived', archived_at: new Date().toISOString().slice(0, 10) })
   } else if (action === 'toggle_milestone') {
     goals = goals.map(g => g.id !== id ? g : {
       ...g,

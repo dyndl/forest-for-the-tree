@@ -410,9 +410,17 @@ export default function App(){
   const[reevalAttachments,setReevalAttachments]=useState([])
   const[goals,setGoals]=useState([])
   const[expandedGoal,setExpandedGoal]=useState(null)
+  const[deletingGoalId,setDeletingGoalId]=useState(null)
   const[newGoalOpen,setNewGoalOpen]=useState(false)
   const[newGoalLoading,setNewGoalLoading]=useState(false)
   const[newGoalDraft,setNewGoalDraft]=useState({title:'',description:'',target_date:''})
+  // Log done work
+  const[logOpen,setLogOpen]=useState(false)
+  const[logName,setLogName]=useState('')
+  const[logBlocks,setLogBlocks]=useState(1)
+  const[logCat,setLogCat]=useState('admin')
+  const[logSubmitting,setLogSubmitting]=useState(false)
+  const[logXp,setLogXp]=useState(null)
   const[matrixPanel,setMatrixPanel]=useState(null)
   const[matrixEdit,setMatrixEdit]=useState(null)
   const[vetoPanel,setVetoPanel]=useState(null)
@@ -715,6 +723,21 @@ export default function App(){
     try{await api.tasks.update(matrixPanel.id,{name,blocks,cat})}catch{setTasks(ts=>ts.map(t=>t.id===orig.id?orig:t));setMatrixPanel(orig)}
   }
 
+  async function logDoneWork(){
+    if(!logName.trim())return
+    setLogSubmitting(true)
+    try{
+      const r=await api.tasks.create({name:logName.trim(),blocks:logBlocks,q:'do',cat:logCat,source:'manual_log',done:true})
+      if(r.task){
+        setTasks(ts=>[...ts,r.task])
+        if(r.xp)setLogXp(r.xp)
+        setLogName('');setLogBlocks(1)
+        timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))
+      }
+    }catch{}
+    setLogSubmitting(false)
+  }
+
   async function sendChat(){
     if(!chatMsg.trim())return
     const msg=chatMsg.trim();setChatMsg('');setChatLoading(true);setChatVisible(true)
@@ -905,7 +928,7 @@ export default function App(){
         <div style={{flex:1,padding:'10px 8px',display:'flex',flexDirection:'column',gap:2}}>
           {navItems.map(item=>(
             <button key={item.id} onClick={()=>{setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule();if(item.id==='tree'&&!treeData)loadTree()}}
-              style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:'var(--r)',cursor:'pointer',color:view===item.id?'var(--acc2)':'var(--txt2)',fontSize:14.5,border:view===item.id?'1px solid var(--gb2)':'1px solid transparent',background:view===item.id?'var(--glass2)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:view===item.id?500:400}}>
+              style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:'var(--r)',cursor:'pointer',color:view===item.id?'var(--acc2)':'var(--txt2)',fontSize:14.5,border:view===item.id?'1px solid rgba(45,122,82,0.35)':'1px solid transparent',background:view===item.id?'rgba(45,122,82,0.10)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:view===item.id?600:400,boxShadow:view===item.id?'inset 3px 0 0 var(--acc2)':'none',transition:'all .13s'}}>
               <span style={{fontSize:16,width:17,textAlign:'center'}}>{item.icon}</span>
               <span style={{flex:1}}>{item.label}</span>
               {item.badge>0&&<span style={{fontFamily:'var(--m)',fontSize:10.5,background:item.bc,color:'#fff',padding:'1px 5px',borderRadius:9}}>{item.badge}</span>}
@@ -1230,6 +1253,42 @@ export default function App(){
                 </div>
               )
             })()}
+            {/* ── LOG DONE WORK ── */}
+            <div className="card">
+              <div className="card-hdr" style={{cursor:'pointer'}} onClick={()=>setLogOpen(o=>!o)}>
+                <span className="card-title">Log done work</span>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  {doneTasks.filter(t=>t.source==='manual_log').length>0&&<span style={{fontFamily:'var(--m)',fontSize:10,background:'var(--ok)',color:'#fff',padding:'1px 6px',borderRadius:8}}>{doneTasks.filter(t=>t.source==='manual_log').length} logged</span>}
+                  <span style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt3)'}}>{logOpen?'▾':'›'}</span>
+                </div>
+              </div>
+              {logOpen&&<div style={{padding:'10px 13px',display:'flex',flexDirection:'column',gap:10}}>
+                <p style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',lineHeight:1.5}}>Got something done that wasn't on the COO plan? Log it — you'll earn XP and the COO will learn your patterns.</p>
+                <div style={{display:'flex',gap:7,alignItems:'flex-end',flexWrap:'wrap'}}>
+                  <input value={logName} onChange={e=>setLogName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&logDoneWork()} placeholder="What did you get done?" className="fm-in" style={{flex:'1 1 180px',minWidth:0}}/>
+                  <select value={logCat} onChange={e=>setLogCat(e.target.value)} className="fm-sel" style={{width:90,flexShrink:0}}>
+                    {(settings?.life_areas?.length?settings.life_areas.filter(a=>a.key).map(a=>a.key):['career','admin','learning','fitness','family','finance']).map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select value={logBlocks} onChange={e=>setLogBlocks(Number(e.target.value))} className="fm-sel" style={{width:86,flexShrink:0}}>
+                    {[[1,'15 min'],[2,'30 min'],[3,'45 min'],[4,'1 hr'],[6,'1.5 hr'],[8,'2 hr']].map(([b,l])=><option key={b} value={b}>{l}</option>)}
+                  </select>
+                  <button onClick={logDoneWork} disabled={logSubmitting||!logName.trim()} className="btn-primary" style={{flexShrink:0,height:36}}>{logSubmitting?'…':'Log it ✓'}</button>
+                </div>
+                {logXp&&<div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',animation:'fadeUp .3s'}}>+{logXp.h_gained} XP · streak {logXp.streak} day{logXp.streak!==1?'s':''} 🌱{logXp.tier_up?` → ${logXp.tier_up.species}!`:''}</div>}
+                {doneTasks.filter(t=>t.source==='manual_log').length>0&&<div style={{borderTop:'1px solid var(--gb2)',paddingTop:8}}>
+                  <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--txt3)',marginBottom:6}}>Logged today</div>
+                  {doneTasks.filter(t=>t.source==='manual_log').map(t=>(
+                    <div key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid rgba(0,0,0,.04)'}}>
+                      <span style={{color:'var(--ok)',fontSize:12}}>✓</span>
+                      <span style={{flex:1,fontSize:13,color:'var(--txt)'}}>{t.name}</span>
+                      <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{t.blocks*15}m</span>
+                      <span className={`pill pc-${t.cat}`}>{t.cat}</span>
+                    </div>
+                  ))}
+                </div>}
+              </div>}
+            </div>
+
             <div className="card">
               <div className="card-hdr" style={{flexDirection:'column',alignItems:'stretch',gap:0,paddingBottom:0}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',paddingBottom:8}}>
@@ -1606,6 +1665,35 @@ export default function App(){
 
           {/* LOG */}
           {view==='log'&&<>
+            {/* COO grade */}
+            {(()=>{
+              const taskSlots=(schedule?.slots||[]).filter(s=>!['break','lunch','free','event','optional_tonight'].includes(s.type))
+              const acc=taskSlots.filter(s=>s.state==='accepted').length
+              const vet=taskSlots.filter(s=>s.state==='vetoed').length
+              const man=tasks.filter(t=>t.source==='manual_log').length
+              const total=acc+vet
+              const pct=total>0?Math.round(acc/total*100):null
+              const grade=pct===null?'—':pct>=90?'A':pct>=75?'B':pct>=60?'C':pct>=45?'D':'F'
+              const gradeColor=pct===null?'var(--txt3)':pct>=90?'var(--ok)':pct>=75?'var(--acc)':pct>=60?'var(--warn)':'var(--danger)'
+              const agentAlerts=agents.filter(a=>a.status==='alert').length
+              return(
+                <div className="card" style={{padding:'13px 15px',display:'flex',gap:12,alignItems:'stretch'}}>
+                  <div style={{textAlign:'center',minWidth:60}}>
+                    <div style={{fontFamily:'var(--m)',fontSize:38,fontWeight:600,color:gradeColor,lineHeight:1}}>{grade}</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:3,textTransform:'uppercase',letterSpacing:'.08em'}}>COO grade</div>
+                    {pct!==null&&<div style={{fontFamily:'var(--m)',fontSize:10,color:gradeColor,marginTop:1}}>{pct}%</div>}
+                  </div>
+                  <div style={{flex:1,display:'flex',flexDirection:'column',gap:5,justifyContent:'center',borderLeft:'1px solid var(--gb2)',paddingLeft:12}}>
+                    <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt2)'}}><span style={{color:'var(--ok)'}}>{acc}</span> slots accepted · <span style={{color:'var(--danger)'}}>{vet}</span> vetoed</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt2)'}}><span style={{color:'var(--ok)'}}>{man}</span> tasks logged outside plan</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt2)'}}><span style={{color:agentAlerts>0?'var(--danger)':'var(--ok)'}}>{agentAlerts}</span> active agent alert{agentAlerts!==1?'s':''}</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginTop:2,lineHeight:1.5}}>
+                      COO is graded on you not needing to reschedule or alter its plan. Manual logs teach it your real patterns.
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
             <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
               {[[doneTasks.length,'Tasks done',`of ${tasks.length}`,null],[Math.round(doneTasks.reduce((s,t)=>s+t.blocks*15,0)),'Min invested',`${tasks.reduce((s,t)=>s+t.blocks*15,0)} budgeted`,'var(--do)'],[tasks.filter(t=>t.who!=='me').length,'Delegated','off-loaded','var(--del)'],[tasks.filter(t=>t.status==='wont_do').length,"Won't do",'dismissed','var(--warn)'],[schedule?.slots?.filter(s=>s.state==='accepted').length||0,'Blocks accepted','COO plan','var(--acc)']].map(([n,l,s,c])=>(
                 <div key={l} className="card" style={{padding:'12px 13px'}}><div style={{fontFamily:'var(--m)',fontSize:24,fontWeight:500,color:c||'var(--txt)',lineHeight:1}}>{n}</div><div style={{fontSize:11,color:'var(--txt3)',marginTop:4,textTransform:'uppercase',letterSpacing:'.07em'}}>{l}</div><div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginTop:2}}>{s}</div></div>
@@ -1724,7 +1812,14 @@ export default function App(){
                         {goal.status==='active'&&<button onClick={()=>patchGoal({id:goal.id,action:'set_status',status:'met'})} style={{fontFamily:'var(--m)',fontSize:12,padding:'5px 12px',borderRadius:5,border:'1px solid rgba(138,92,0,.3)',background:'rgba(138,92,0,.08)',color:'#8a5c00',cursor:'pointer'}}>🌳 Met it ✓</button>}
                         {goal.status==='active'&&<button onClick={()=>patchGoal({id:goal.id,action:'set_status',status:'paused'})} style={{fontFamily:'var(--m)',fontSize:12,padding:'5px 10px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer'}}>Pause</button>}
                         {goal.status!=='active'&&<button onClick={()=>patchGoal({id:goal.id,action:'set_status',status:'active'})} style={{fontFamily:'var(--m)',fontSize:12,padding:'5px 10px',borderRadius:5,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.08)',color:'var(--ok)',cursor:'pointer'}}>Resume</button>}
-                        <button onClick={()=>patchGoal({id:goal.id,action:'delete'})} style={{fontFamily:'var(--m)',fontSize:12,padding:'5px 10px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer',marginLeft:'auto',opacity:.55}}>Delete</button>
+                        {deletingGoalId===goal.id
+                          ?<div style={{display:'flex',gap:5,marginLeft:'auto',alignItems:'center'}}>
+                            <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--danger)'}}>Archive this goal?</span>
+                            <button onClick={async()=>{await patchGoal({id:goal.id,action:'delete'});setDeletingGoalId(null)}} style={{fontFamily:'var(--m)',fontSize:11,padding:'4px 10px',borderRadius:5,border:'1px solid rgba(138,40,40,.4)',background:'rgba(138,40,40,.1)',color:'var(--danger)',cursor:'pointer'}}>Yes, archive</button>
+                            <button onClick={()=>setDeletingGoalId(null)} style={{fontFamily:'var(--m)',fontSize:11,padding:'4px 10px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer'}}>Cancel</button>
+                          </div>
+                          :<button onClick={()=>setDeletingGoalId(goal.id)} style={{fontFamily:'var(--m)',fontSize:12,padding:'5px 10px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer',marginLeft:'auto',opacity:.55}}>Archive</button>
+                        }
                       </div>
                     </div>}
                   </div>

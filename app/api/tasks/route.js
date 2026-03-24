@@ -56,6 +56,12 @@ export async function POST(req) {
   const { data, error } = await supabaseAdmin.from('tasks').insert(task).select().single()
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
+  // Award XP immediately for manual-log tasks (already done when created)
+  let xpEvent = null
+  if (task.done && task.source === 'manual_log') {
+    xpEvent = await awardXP(userId, task.blocks).catch(() => null)
+  }
+
   // Async: enrich notes with source evidence + sync to Google Tasks (don't block response)
   ;(async () => {
     let emails = [], calendarEvents = []
@@ -93,7 +99,7 @@ export async function POST(req) {
     }
   })()
 
-  return Response.json({ task: data })
+  return Response.json({ task: data, xp: xpEvent })
 }
 
 // PATCH /api/tasks — update (toggle done, move quadrant)

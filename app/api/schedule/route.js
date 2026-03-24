@@ -225,6 +225,13 @@ export async function PATCH(req) {
     }
   }
 
-  await supabaseAdmin.from('schedules').update({ slots }).eq('user_id', userId).eq('date', schedDate)
-  return Response.json({ slots })
+  // Recompute COO score after every slot state change
+  const taskSlotsFinal = slots.filter(s => !['break','lunch','free','event','optional_tonight'].includes(s.type))
+  const acceptedFinal = taskSlotsFinal.filter(s => s.state === 'accepted').length
+  const vetoedFinal = taskSlotsFinal.filter(s => s.state === 'vetoed').length
+  const total = acceptedFinal + vetoedFinal
+  const cooScore = total > 0 ? Math.round((acceptedFinal / total) * 100) : null
+
+  await supabaseAdmin.from('schedules').update({ slots, coo_score: cooScore }).eq('user_id', userId).eq('date', schedDate)
+  return Response.json({ slots, coo_score: cooScore })
 }
