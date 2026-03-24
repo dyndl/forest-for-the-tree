@@ -1,8 +1,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns } from '@/lib/coo'
+import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse } from '@/lib/coo'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 
@@ -15,8 +16,8 @@ export async function POST(req) {
 
   const [tasks, schedule, userCtx] = await Promise.all([
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey()).then(r => r.data || []),
-    supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', todayKey()).single().then(r => r.data),
-    supabaseAdmin.from('user_context').select('*').eq('user_id', userId).single().then(r => r.data),
+    supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', todayKey()).maybeSingle().then(r => r.data),
+    supabaseAdmin.from('user_context').select('*').eq('user_id', userId).maybeSingle().then(r => r.data),
   ])
 
   const roadmap = userCtx?.roadmap || 'No roadmap set yet'
@@ -25,7 +26,8 @@ export async function POST(req) {
   if (type === 'midday' || type === 'afternoon') {
     result = await generateCheckin({ type, tasks, schedule, userMessage })
   } else if (type === 'evening') {
-    result = await generateEveningRetro({ tasks, schedule, roadmap })
+    const incompleteTasks = tasks.filter(t => !t.done && t.status !== 'wont_do')
+    result = await generateEveningRetro({ tasks, schedule, roadmap, incompleteTasks })
 
     // Store retro
     await supabaseAdmin.from('retros').upsert(
@@ -56,6 +58,9 @@ export async function POST(req) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
     result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap })
+  } else {
+    // Free-form chat — catch-all for type:'chat' and any future types
+    result = await generateChatResponse({ userMessage, tasks, schedule, userCtx })
   }
 
   return Response.json({ result })

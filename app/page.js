@@ -719,7 +719,7 @@ export default function App(){
     if(!chatMsg.trim())return
     const msg=chatMsg.trim();setChatMsg('');setChatLoading(true);setChatVisible(true)
     setChatHistory(h=>[...h.slice(-99),{role:'user',content:msg}])
-    try{const{result}=await api.coo.checkin('chat',msg);if(result){const resp=result.message||result.headline||JSON.stringify(result);setChatHistory(h=>[...h.slice(-99),{role:'coo',content:resp}]);if(result.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}}catch{}
+    try{const r=await api.coo.checkin('chat',msg);const result=r?.result;if(result){const resp=result.message||result.headline||JSON.stringify(result);setChatHistory(h=>[...h.slice(-99),{role:'coo',content:resp}]);if(result.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}else if(r?.error){setChatHistory(h=>[...h.slice(-99),{role:'coo',content:`Error: ${r.error}`}])}}catch(e){setChatHistory(h=>[...h.slice(-99),{role:'coo',content:`Network error — ${e.message||'check Vercel logs'}`}])}
     setChatLoading(false)
   }
 
