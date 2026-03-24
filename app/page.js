@@ -66,9 +66,31 @@ function getZoneHorizon(qBaseX,cx,qW){
   return ZONE_KEYS[zIdx]
 }
 
+// ── Deterministic seeded random for stable bubble positions ──────────────────
+function seededRand(s){s=Math.imul(s^(s>>>15),0xd9e0b4fd)>>>0;s=Math.imul(s^(s>>>13),0x9b14f3a3)>>>0;return(s>>>0)/0xffffffff}
+function hashStr(str){let h=0;for(let i=0;i<str.length;i++)h=Math.imul(31,h)+str.charCodeAt(i)|0;return Math.abs(h)}
+
+// ── Auto-link parser — turns URLs, emails, phones into clickable spans ────────
+function parseLinks(text){
+  if(!text)return[{t:'text',v:text||''}]
+  const re=/(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/g
+  const parts=[];let last=0,m
+  while((m=re.exec(text))!==null){
+    if(m.index>last)parts.push({t:'text',v:text.slice(last,m.index)})
+    const v=m[0]
+    if(/^https?:\/\/|^www\./.test(v))parts.push({t:'url',v,href:v.startsWith('www.')?'https://'+v:v})
+    else if(/@/.test(v))parts.push({t:'email',v,href:'mailto:'+v})
+    else parts.push({t:'phone',v,href:'tel:'+v.replace(/[^\d+]/g,'')})
+    last=m.index+v.length
+  }
+  if(last<text.length)parts.push({t:'text',v:text.slice(last)})
+  return parts
+}
+
 function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick,onMatrixDrop}){
   const canvasRef=useRef(null);const mapRef=useRef([]);const tipRef=useRef(null)
   const hoverRef=useRef(null);const rafRef=useRef(null);const drawRef=useRef(null)
+  const prevIdsRef=useRef(new Set());const animTimes=useRef({})
 
   const draw=useCallback(()=>{
     const canvas=canvasRef.current;if(!canvas)return
@@ -130,7 +152,17 @@ function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick,onMatrixDrop}){
       ctx.fillText(txt,x,y)
     })
 
-    // Bubbles placed in their zone strip
+    // Detect newly added tasks for pop-in animation
+    const currentIds=new Set(tasks.map(t=>t.id))
+    const now=Date.now()
+    if(prevIdsRef.current.size>0){
+      tasks.forEach(t=>{if(!prevIdsRef.current.has(t.id)&&!animTimes.current[t.id])animTimes.current[t.id]=now})
+    }
+    prevIdsRef.current=currentIds
+    Object.keys(animTimes.current).forEach(id=>{if(!currentIds.has(id))delete animTimes.current[id]})
+
+    // Bubbles placed in their zone strip (seeded positions — stable across redraws)
+    let needsAnim=false
     mapRef.current=[];const placed=[]
     tasks.forEach(t=>{
       const q=t.q||'do'
@@ -138,30 +170,40 @@ function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick,onMatrixDrop}){
       const qBaseX=isRight?qW:0;const qBaseY=isTop?0:qH
       const zIdx=getZoneIdx(t.date)
       const r=Math.max(10,Math.min(28,t.blocks*4))
-      // Target: center of strip, middle of quadrant vertically
       const zCx=qBaseX+zIdx*zW+zW/2;const zCy=qBaseY+qH/2
+      const seed=hashStr(t.id)
       let bx=zCx,by=zCy,att=0
       do{
-        bx=zCx+(Math.random()-.5)*(zW-r*2-2)
-        by=zCy+(Math.random()-.5)*(qH-r*2-36)
+        bx=zCx+(seededRand(seed+att*997)-.5)*(zW-r*2-2)
+        by=zCy+(seededRand(seed+att*997+500)-.5)*(qH-r*2-36)
         att++
       }while(att<50&&placed.some(p=>Math.hypot(p[0]-bx,p[1]-by)<r+p[2]+4))
       bx=Math.max(qBaseX+r+2,Math.min(qBaseX+qW-r-2,bx))
       by=Math.max(qBaseY+r+20,Math.min(qBaseY+qH-r-20,by))
       placed.push([bx,by,r])
+
+      // Animation: new bubbles pop in with scale+fade over 380ms
+      const startT=animTimes.current[t.id]
+      const anim=startT?Math.min(1,(now-startT)/380):1
+      if(anim<1)needsAnim=true
+      else if(startT)delete animTimes.current[t.id]
+      const ar=r*(.35+.65*anim) // animated radius
       const col=CAT_COLORS[t.cat]||'#3d7a52'
       const isProposed=t.status==='proposed';const isSel=t.id===selectedId
-      if(isSel){ctx.beginPath();ctx.arc(bx,by,r+5,0,Math.PI*2);ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.setLineDash([]);ctx.globalAlpha=0.55;ctx.stroke();ctx.globalAlpha=1}
-      ctx.beginPath();ctx.arc(bx,by,r,0,Math.PI*2)
+      ctx.globalAlpha=anim
+      if(isSel){ctx.beginPath();ctx.arc(bx,by,ar+5,0,Math.PI*2);ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.setLineDash([]);ctx.stroke()}
+      ctx.beginPath();ctx.arc(bx,by,ar,0,Math.PI*2)
       if(t.done){ctx.fillStyle='rgba(20,60,35,.05)';ctx.fill();ctx.strokeStyle='rgba(20,60,35,.18)';ctx.lineWidth=1;ctx.setLineDash([]);ctx.stroke()}
       else if(isProposed){ctx.lineWidth=2;ctx.setLineDash([4,3]);ctx.strokeStyle=col;ctx.stroke();ctx.setLineDash([])}
       else{ctx.fillStyle=col+'40';ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2;ctx.setLineDash([]);ctx.stroke()}
-      ctx.font=(t.done?'400 ':'600 ')+Math.max(9,r*.55)+'px JetBrains Mono,monospace'
+      ctx.font=(t.done?'400 ':'600 ')+Math.max(9,ar*.55)+'px JetBrains Mono,monospace'
       ctx.fillStyle=t.done?'rgba(20,60,35,.26)':isProposed?col+'aa':col
       ctx.textAlign='center';ctx.textBaseline='middle'
       ctx.fillText(t.done?'✓':t.blocks,bx,by)
+      ctx.globalAlpha=1
       mapRef.current.push({x:bx,y:by,r,t})
     })
+    if(needsAnim)scheduleRedraw()
 
     // Hover zone highlight — drawn last so it's always on top
     const hz=hoverRef.current
@@ -764,9 +806,7 @@ export default function App(){
       setSchedManual({date:t.date||todayStr(),time:''})
       setSchedAction({taskId,phase:'manual'})
     }else if(option==='auto'){
-      setSchedAction(null);setSchedActLoading(true)
-      await generateSchedule()
-      setSchedActLoading(false)
+      setSchedAction({taskId,phase:'auto_horizon'})
     }else if(option==='delegate'){
       setSchedAction(null);setSchedActLoading(true)
       try{
@@ -783,6 +823,19 @@ export default function App(){
     const updates={date:date||todayStr(),q:'do',status:'active',...(time?{notes:`Scheduled at ${time}`}:{})}
     setTasks(ts=>ts.map(x=>x.id===taskId?{...x,...updates}:x))
     try{await api.tasks.update(taskId,updates)}catch{}
+  }
+  async function handleSchedAutoHorizon(taskId,horizon){
+    setSchedAction(null);setSchedActLoading(true)
+    if(horizon!=='idk'){
+      // week = not today/tmrw → end of this week; month = not this week → end of month
+      const newDate=horizon==='today'?todayStr():horizon==='tmrw'?addDays(1):horizon==='week'?endOfWeek():horizon==='month'?endOfMonth():null
+      if(newDate){
+        setTasks(ts=>ts.map(x=>x.id===taskId?{...x,date:newDate}:x))
+        try{await api.tasks.update(taskId,{date:newDate})}catch{}
+      }
+    }
+    await generateSchedule()
+    setSchedActLoading(false)
   }
 
   if(status==='loading')return(<><div style={{position:'fixed',inset:0,background:'linear-gradient(162deg,#cce8d5 0%,#a8d9b8 18%,#7bbf98 48%,#4a9e6b 72%,#2d5a3d 100%)',zIndex:0}}/><TreeSVG/><div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:20}}><div style={{width:24,height:24,border:'3px solid rgba(122,170,138,0.3)',borderTopColor:'#2d7a52',borderRadius:'50%',animation:'spin .7s linear infinite'}}/></div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></>)
@@ -1271,10 +1324,27 @@ export default function App(){
                           <button onClick={()=>setSchedAction(null)} style={{padding:'5px 9px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--f)',fontSize:13,cursor:'pointer'}}>✕</button>
                         </div>
                       )}
-                      {/* Expanded task detail */}
+                      {/* Auto horizon picker — when to schedule */}
+                      {schedAction?.taskId===t.id&&schedAction.phase==='auto_horizon'&&(
+                        <div style={{margin:'0 9px 7px 28px',padding:'9px 10px',background:'var(--sch-bg)',border:'1px solid var(--sch-bd)',borderRadius:'var(--r)'}}>
+                          <div style={{fontFamily:'var(--m)',fontSize:10.5,color:'var(--sch)',marginBottom:7,fontWeight:500}}>When should the COO slot this in?</div>
+                          <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                            {[['idk','IDK','no date constraint'],['today','Today','schedule today'],['tmrw','Tmrw','tomorrow'],['week','Week','not today or tmrw'],['month','Month','not this week']].map(([h,lbl,sub])=>(
+                              <button key={h} onClick={()=>handleSchedAutoHorizon(t.id,h)} disabled={schedActLoading}
+                                style={{flex:1,minWidth:70,padding:'6px 8px',borderRadius:6,border:'1px solid var(--sch-bd)',background:'rgba(26,95,168,.08)',color:'var(--sch)',fontFamily:'var(--f)',fontSize:12,cursor:'pointer',textAlign:'left',opacity:schedActLoading?.5:1}}>
+                                <div style={{fontWeight:600}}>{lbl}</div>
+                                <div style={{fontSize:10,opacity:.7,marginTop:1}}>{sub}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* Expanded task detail — notes with clickable source links */}
                       {expandedTask===t.id&&(
                         <div style={{margin:'0 9px 8px 28px',padding:'9px 11px',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:'var(--r)'}}>
-                          {t.notes&&<div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt2)',marginBottom:6,lineHeight:1.55}}>{t.notes}</div>}
+                          {t.notes&&<div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt2)',marginBottom:6,lineHeight:1.6,wordBreak:'break-word'}}>
+                            {parseLinks(t.notes).map((p,i)=>p.t==='text'?<span key={i}>{p.v}</span>:<a key={i} href={p.href} target={p.t==='url'?'_blank':'_self'} rel="noopener noreferrer" style={{color:'var(--sch)',textDecoration:'underline',cursor:'pointer'}}>{p.v}</a>)}
+                          </div>}
                           <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                             <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)'}}>{t.blocks}×15min · {t.cat}{t.who&&t.who!=='me'?` · ${t.who}`:''}</span>
                             {t.q==='do'&&!t.done&&<button onClick={()=>{toggleTask(t.id);setExpandedTask(null)}} style={{marginLeft:'auto',padding:'4px 13px',borderRadius:5,border:'none',background:'var(--ok)',color:'#fff',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer',fontWeight:500}}>Mark done ✓</button>}
