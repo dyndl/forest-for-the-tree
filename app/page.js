@@ -66,7 +66,7 @@ function getZoneHorizon(qBaseX,cx,qW){
   return ZONE_KEYS[zIdx]
 }
 
-function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick}){
+function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick,onMatrixDrop}){
   const canvasRef=useRef(null);const mapRef=useRef([]);const tipRef=useRef(null)
   const hoverRef=useRef(null);const rafRef=useRef(null);const drawRef=useRef(null)
 
@@ -261,6 +261,16 @@ function MatrixCanvas({tasks,onToggle,selectedId,onZoneClick}){
           onMouseLeave={handleMouseLeave}
           onClick={e=>{const rect=canvasRef.current.getBoundingClientRect();handleCanvasClick(e.clientX-rect.left,e.clientY-rect.top)}}
           onTouchEnd={e=>{e.preventDefault();const rect=canvasRef.current.getBoundingClientRect();const t=e.changedTouches[0];handleCanvasClick(t.clientX-rect.left,t.clientY-rect.top)}}
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}}
+          onDrop={e=>{
+            if(!onMatrixDrop)return
+            const canvas=canvasRef.current;if(!canvas)return
+            const rect=canvas.getBoundingClientRect()
+            const cx=e.clientX-rect.left,cy=e.clientY-rect.top
+            const W=parseFloat(canvas.style.width),H=parseFloat(canvas.style.height)
+            const q=cx>W/2&&cy<H/2?'do':cx>W/2?'schedule':cy<H/2?'delegate':'eliminate'
+            onMatrixDrop(e,q)
+          }}
         />
       </div>
       <div ref={tipRef} style={{position:'absolute',background:'rgba(255,255,255,.96)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.88)',borderRadius:8,padding:'7px 10px',fontSize:12,color:'var(--txt)',pointerEvents:'none',display:'none',zIndex:99,fontFamily:'var(--m)',maxWidth:200,lineHeight:1.5}}/>
@@ -374,6 +384,14 @@ export default function App(){
   const[chatVisible,setChatVisible]=useState(false)
   const mediaRecorderRef=useRef(null)
   const timerRefs=useRef([])
+  const dragRef=useRef(null)
+  const [taskOrder,setTaskOrder]=useState([])
+  const [dragOver,setDragOver]=useState(null)
+  const [undoInfo,setUndoInfo]=useState(null)
+  const [schedAction,setSchedAction]=useState(null)
+  const [schedManual,setSchedManual]=useState({date:'',time:''})
+  const [schedActLoading,setSchedActLoading]=useState(false)
+  const [expandedTask,setExpandedTask]=useState(null)
 
   const userId=session?.user?.email
 
@@ -383,6 +401,21 @@ export default function App(){
     window.addEventListener('online',on);window.addEventListener('offline',off)
     return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off)}
   },[])
+
+  // Keep taskOrder in sync — preserve custom order, append newly loaded tasks at end
+  useEffect(()=>{
+    setTaskOrder(prev=>{
+      const existing=new Set(prev)
+      const filtered=tasks.filter(t=>t.status!=='wont_do')
+      const newIds=filtered.filter(t=>!existing.has(t.id))
+        .sort((a,b)=>({do:0,schedule:1,delegate:2,eliminate:3}[a.q]-{do:0,schedule:1,delegate:2,eliminate:3}[b.q])||(a.done-b.done))
+        .map(t=>t.id)
+      return [...prev.filter(id=>filtered.some(t=>t.id===id)),...newIds]
+    })
+  },[tasks])
+
+  // Auto-clear undo toast after 5s
+  useEffect(()=>{if(!undoInfo)return;const t=setTimeout(()=>setUndoInfo(null),5000);return()=>clearTimeout(t)},[undoInfo])
 
   // Realtime subscriptions
   useRealtime({
@@ -688,6 +721,68 @@ export default function App(){
     setCheckinLoading(true)
     try{const{result}=await api.coo.checkin(checkin,checkinMsg);setCheckinResult(result);if(result?.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}catch{}
     setCheckinLoading(false)
+  }
+
+  // ── Drag-to-reorder + drag-to-matrix ────────────────────────────────────────
+  function handleDragStart(e,taskId,idx){
+    dragRef.current={id:taskId,fromIdx:idx}
+    e.dataTransfer.effectAllowed='move'
+    e.dataTransfer.setData('text/plain',taskId)
+  }
+  function handleTaskDragOver(e,idx){
+    e.preventDefault();e.dataTransfer.dropEffect='move'
+    if(dragOver!==idx)setDragOver(idx)
+  }
+  function handleTaskDrop(e,toIdx,orderedList){
+    e.preventDefault();e.stopPropagation()
+    const {id}=dragRef.current||{};if(!id){setDragOver(null);return}
+    const fromPos=taskOrder.indexOf(id);const toId=orderedList[toIdx]?.id
+    const toPos=toId&&toId!==id?taskOrder.indexOf(toId):taskOrder.length
+    if(fromPos===toPos){setDragOver(null);dragRef.current=null;return}
+    const next=[...taskOrder];const[moved]=next.splice(fromPos,1);next.splice(toPos,0,moved)
+    setUndoInfo({prevOrder:taskOrder,label:'reorder'})
+    setTaskOrder(next);setDragOver(null);dragRef.current=null
+  }
+  function handleDropOnMatrix(e,q){
+    e.preventDefault()
+    const taskId=dragRef.current?.id||e.dataTransfer.getData('text/plain');if(!taskId)return
+    const t=tasks.find(x=>x.id===taskId);if(!t||t.q===q)return
+    setUndoInfo({prevTasks:[...tasks],prevOrder:[...taskOrder],label:`move to ${q}`})
+    updateTaskQ(taskId,q);dragRef.current=null
+  }
+  function handleUndo(){
+    if(!undoInfo)return
+    if(undoInfo.prevTasks)setTasks(undoInfo.prevTasks)
+    if(undoInfo.prevOrder)setTaskOrder(undoInfo.prevOrder)
+    setUndoInfo(null)
+  }
+
+  // ── Schedule-quadrant action ─────────────────────────────────────────────────
+  async function handleSchedOption(taskId,option){
+    const t=tasks.find(x=>x.id===taskId);if(!t)return
+    if(option==='manual'){
+      setSchedManual({date:t.date||todayStr(),time:''})
+      setSchedAction({taskId,phase:'manual'})
+    }else if(option==='auto'){
+      setSchedAction(null);setSchedActLoading(true)
+      await generateSchedule()
+      setSchedActLoading(false)
+    }else if(option==='delegate'){
+      setSchedAction(null);setSchedActLoading(true)
+      try{
+        await api.coo.checkin('delegate',`Handle this for me and schedule a check-in to discuss progress: "${t.name}" (${t.cat}, ~${t.blocks*15}min)`)
+        const updates={q:'delegate',status:'active'}
+        setTasks(ts=>ts.map(x=>x.id===taskId?{...x,...updates}:x))
+        await api.tasks.update(taskId,{q:'delegate'})
+      }catch{}
+      setSchedActLoading(false)
+    }
+  }
+  async function confirmManualSched(taskId){
+    const{date,time}=schedManual;setSchedAction(null)
+    const updates={date:date||todayStr(),q:'do',status:'active',...(time?{notes:`Scheduled at ${time}`}:{})}
+    setTasks(ts=>ts.map(x=>x.id===taskId?{...x,...updates}:x))
+    try{await api.tasks.update(taskId,updates)}catch{}
   }
 
   if(status==='loading')return(<><div style={{position:'fixed',inset:0,background:'linear-gradient(162deg,#cce8d5 0%,#a8d9b8 18%,#7bbf98 48%,#4a9e6b 72%,#2d5a3d 100%)',zIndex:0}}/><TreeSVG/><div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:20}}><div style={{width:24,height:24,border:'3px solid rgba(122,170,138,0.3)',borderTopColor:'#2d7a52',borderRadius:'50%',animation:'spin .7s linear infinite'}}/></div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></>)
@@ -1017,7 +1112,7 @@ export default function App(){
                 )}
               </div>
             )}
-            <MatrixCanvas tasks={tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon))} onToggle={handleMatrixClick} selectedId={matrixPanel?.id} onZoneClick={handleZoneClick}/>
+            <MatrixCanvas tasks={tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon))} onToggle={handleMatrixClick} selectedId={matrixPanel?.id} onZoneClick={handleZoneClick} onMatrixDrop={handleDropOnMatrix}/>
             {/* Matrix task action panel */}
             {matrixPanel&&(()=>{
               const t=matrixPanel
@@ -1098,21 +1193,102 @@ export default function App(){
                   })}
                 </div>
               </div>
-              <div style={{padding:'3px 3px 2px'}}>
-                {[...tasks].filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon)).sort((a,b)=>({do:0,schedule:1,delegate:2,eliminate:3}[a.q]-{do:0,schedule:1,delegate:2,eliminate:3}[b.q])||(a.done-b.done)).map(t=>(
-                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 9px',borderRadius:'var(--r)',opacity:t.done?.42:1}}>
-                    <div onClick={()=>t.status!=='proposed'&&toggleTask(t.id)} style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${t.done?'var(--del)':'var(--txt3)'}`,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'#fff',fontWeight:700,background:t.done?'var(--del)':'transparent',cursor:t.status==='proposed'?'default':'pointer'}}>{t.done?'✓':''}</div>
-                    <div onClick={()=>t.status!=='proposed'&&toggleTask(t.id)} style={{flex:1,fontSize:14.5,color:t.status==='proposed'?'var(--txt3)':'var(--txt)',minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',textDecoration:t.done?'line-through':'none',cursor:t.status==='proposed'?'default':'pointer'}}>{t.name}{t.status==='proposed'&&<span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginLeft:4}}>(proposed)</span>}</div>
-                    <div style={{display:'flex',gap:3,alignItems:'center',flexShrink:0}}>
-                      {t.date!==todayStr()&&<span style={{fontFamily:'var(--m)',fontSize:9.5,color:'var(--txt3)',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:3,padding:'1px 4px'}}>{t.date===addDays(1)?'tmrw':t.date?.slice(5)}</span>}
-                      {t.status==='proposed'
-                        ?<><button onClick={()=>confirmTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',cursor:'pointer'}}>✓ Confirm</button><button onClick={()=>wontDoTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(138,40,40,.2)',background:'rgba(138,40,40,.07)',color:'#8a2828',cursor:'pointer'}}>✗</button></>
-                        :<><span className={`pill pq-${t.q}`}>{t.q}</span><span className={`pill pc-${t.cat}`}>{t.cat}</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{t.blocks}×</span></>
-                      }
+              {(()=>{
+                const orderedTasks=taskOrder
+                  .filter(id=>tasks.some(t=>t.id===id&&t.status!=='wont_do'&&matchesHorizon(t,taskHorizon)))
+                  .map(id=>tasks.find(t=>t.id===id)).filter(Boolean)
+                return(
+                <div style={{padding:'3px 3px 2px'}}
+                  onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null)}}>
+                  {orderedTasks.map((t,ordIdx)=>(
+                    <div key={t.id}
+                      onDragOver={e=>handleTaskDragOver(e,ordIdx)}
+                      onDrop={e=>handleTaskDrop(e,ordIdx,orderedTasks)}>
+                      {/* Drop indicator line */}
+                      {dragOver===ordIdx&&dragRef.current?.id!==t.id&&<div style={{height:2,background:'var(--acc)',borderRadius:1,margin:'0 9px'}}/>}
+                      {/* Main row */}
+                      <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 9px',borderRadius:'var(--r)',opacity:t.done?.42:1,transition:'background .1s',background:expandedTask===t.id?'rgba(26,90,60,.04)':'transparent'}}>
+                        {/* Drag handle */}
+                        <div draggable onDragStart={e=>handleDragStart(e,t.id,ordIdx)} onDragEnd={()=>{setDragOver(null);dragRef.current=null}}
+                          style={{cursor:'grab',color:'var(--txt4)',fontSize:13,flexShrink:0,padding:'0 1px',lineHeight:1,userSelect:'none',touchAction:'none'}}>⠿</div>
+                        {/* Check — behavior differs by quadrant */}
+                        {t.status==='proposed'?(
+                          <div style={{width:14,height:14,borderRadius:3,border:'1.5px solid var(--txt4)',flexShrink:0,background:'transparent'}}/>
+                        ):t.q==='schedule'&&!t.done?(
+                          <div onClick={()=>setSchedAction(a=>a?.taskId===t.id?null:{taskId:t.id,phase:'menu'})}
+                            style={{width:14,height:14,borderRadius:3,border:'1.5px solid var(--sch)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:schedAction?.taskId===t.id?'var(--sch-bg)':'transparent',cursor:'pointer'}}>
+                            {schedAction?.taskId===t.id&&<span style={{fontSize:7,color:'var(--sch)'}}>▾</span>}
+                          </div>
+                        ):(
+                          <div onClick={()=>t.status!=='proposed'&&toggleTask(t.id)}
+                            style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${t.done?'var(--del)':'var(--txt3)'}`,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'#fff',fontWeight:700,background:t.done?'var(--del)':'transparent',cursor:'pointer'}}>
+                            {t.done?'✓':''}
+                          </div>
+                        )}
+                        {/* Task name — click to expand detail */}
+                        <div onClick={()=>setExpandedTask(id=>id===t.id?null:t.id)}
+                          style={{flex:1,fontSize:14.5,color:t.status==='proposed'?'var(--txt3)':'var(--txt)',minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',textDecoration:t.done?'line-through':'none',cursor:'pointer'}}>
+                          {t.name}{t.status==='proposed'&&<span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginLeft:4}}>(proposed)</span>}
+                        </div>
+                        {/* Right: date + pills */}
+                        <div style={{display:'flex',gap:3,alignItems:'center',flexShrink:0}}>
+                          {t.date!==todayStr()&&<span style={{fontFamily:'var(--m)',fontSize:9.5,color:'var(--txt3)',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:3,padding:'1px 4px'}}>{t.date===addDays(1)?'tmrw':t.date?.slice(5)}</span>}
+                          {t.status==='proposed'
+                            ?<><button onClick={()=>confirmTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',cursor:'pointer'}}>✓</button>
+                              <button onClick={()=>wontDoTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(138,40,40,.2)',background:'rgba(138,40,40,.07)',color:'#8a2828',cursor:'pointer'}}>✗</button></>
+                            :<><span className={`pill pq-${t.q}`}>{t.q}</span><span className={`pill pc-${t.cat}`}>{t.cat}</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{t.blocks}×</span></>
+                          }
+                        </div>
+                      </div>
+                      {/* Schedule action menu */}
+                      {schedAction?.taskId===t.id&&schedAction.phase==='menu'&&(
+                        <div style={{margin:'0 9px 7px 28px',padding:'9px 10px',background:'var(--sch-bg)',border:'1px solid var(--sch-bd)',borderRadius:'var(--r)'}}>
+                          <div style={{fontFamily:'var(--m)',fontSize:10.5,color:'var(--sch)',marginBottom:7,fontWeight:500}}>How should this get scheduled?</div>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                            <button onClick={()=>handleSchedOption(t.id,'manual')} style={{flex:1,minWidth:100,padding:'7px 9px',borderRadius:6,border:'1px solid var(--gb2)',background:'var(--glass)',color:'var(--txt)',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer',textAlign:'left'}}>
+                              <div style={{fontWeight:600,marginBottom:2}}>Manual</div>
+                              <div style={{fontSize:11,color:'var(--txt3)'}}>I'll add it to my calendar</div>
+                            </button>
+                            <button onClick={()=>handleSchedOption(t.id,'auto')} disabled={schedActLoading} style={{flex:1,minWidth:100,padding:'7px 9px',borderRadius:6,border:'1px solid var(--sch-bd)',background:'rgba(26,95,168,.12)',color:'var(--sch)',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer',textAlign:'left'}}>
+                              <div style={{fontWeight:600,marginBottom:2}}>Auto</div>
+                              <div style={{fontSize:11,opacity:.8}}>COO slots it in my day</div>
+                            </button>
+                            <button onClick={()=>handleSchedOption(t.id,'delegate')} disabled={schedActLoading} style={{flex:1,minWidth:100,padding:'7px 9px',borderRadius:6,border:'1px solid var(--del-bd)',background:'var(--del-bg)',color:'var(--del)',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer',textAlign:'left'}}>
+                              <div style={{fontWeight:600,marginBottom:2}}>Delegate</div>
+                              <div style={{fontSize:11,opacity:.8}}>COO handles + check-in</div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {/* Manual date/time picker */}
+                      {schedAction?.taskId===t.id&&schedAction.phase==='manual'&&(
+                        <div style={{margin:'0 9px 7px 28px',padding:'8px 10px',background:'var(--sch-bg)',border:'1px solid var(--sch-bd)',borderRadius:'var(--r)',display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                          <input type="date" value={schedManual.date} min={todayStr()} onChange={e=>setSchedManual(s=>({...s,date:e.target.value}))}
+                            style={{flex:1,minWidth:110,background:'rgba(255,255,255,.82)',border:'1px solid var(--gb2)',borderRadius:5,padding:'5px 8px',fontSize:13,fontFamily:'var(--f)',outline:'none',color:'var(--txt)'}}/>
+                          <input type="time" value={schedManual.time} onChange={e=>setSchedManual(s=>({...s,time:e.target.value}))}
+                            style={{flex:1,minWidth:90,background:'rgba(255,255,255,.82)',border:'1px solid var(--gb2)',borderRadius:5,padding:'5px 8px',fontSize:13,fontFamily:'var(--f)',outline:'none',color:'var(--txt)'}}/>
+                          <button onClick={()=>confirmManualSched(t.id)} style={{padding:'5px 13px',borderRadius:5,border:'none',background:'var(--acc2)',color:'#fff',fontFamily:'var(--f)',fontSize:13,cursor:'pointer',fontWeight:500}}>Set →</button>
+                          <button onClick={()=>setSchedAction(null)} style={{padding:'5px 9px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--f)',fontSize:13,cursor:'pointer'}}>✕</button>
+                        </div>
+                      )}
+                      {/* Expanded task detail */}
+                      {expandedTask===t.id&&(
+                        <div style={{margin:'0 9px 8px 28px',padding:'9px 11px',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:'var(--r)'}}>
+                          {t.notes&&<div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt2)',marginBottom:6,lineHeight:1.55}}>{t.notes}</div>}
+                          <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                            <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)'}}>{t.blocks}×15min · {t.cat}{t.who&&t.who!=='me'?` · ${t.who}`:''}</span>
+                            {t.q==='do'&&!t.done&&<button onClick={()=>{toggleTask(t.id);setExpandedTask(null)}} style={{marginLeft:'auto',padding:'4px 13px',borderRadius:5,border:'none',background:'var(--ok)',color:'#fff',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer',fontWeight:500}}>Mark done ✓</button>}
+                            {t.q==='schedule'&&!t.done&&<button onClick={()=>setSchedAction({taskId:t.id,phase:'menu'})} style={{marginLeft:'auto',padding:'4px 13px',borderRadius:5,border:'1px solid var(--sch-bd)',background:'var(--sch-bg)',color:'var(--sch)',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer'}}>Schedule →</button>}
+                            {t.q==='delegate'&&!t.done&&<button onClick={()=>handleSchedOption(t.id,'delegate')} style={{marginLeft:'auto',padding:'4px 13px',borderRadius:5,border:'1px solid var(--del-bd)',background:'var(--del-bg)',color:'var(--del)',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer'}}>Delegate →</button>}
+                            {t.q==='eliminate'&&!t.done&&<button onClick={()=>wontDoTask(t.id)} style={{marginLeft:'auto',padding:'4px 13px',borderRadius:5,border:'1px solid rgba(138,40,40,.2)',background:'rgba(138,40,40,.07)',color:'#8a2828',fontFamily:'var(--f)',fontSize:12.5,cursor:'pointer'}}>Archive →</button>}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                )
+              })()}
               <div style={{display:'flex',gap:5,padding:'8px 9px',borderTop:'1px solid var(--gb2)',flexWrap:'wrap'}}>
                 <input value={qaName} onChange={e=>setQaName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&qaName){addTask({name:qaName,q:qaQ,cat:qaCat,blocks:qaB,who:'me',notes:'',date:horizonDate(qaWhen)});setQaName('')}}} placeholder="Quick add task…" style={{flex:1,background:'transparent',border:'none',outline:'none',color:'var(--txt)',fontSize:14.5,fontFamily:'var(--f)',minWidth:120}}/>
                 <div style={{display:'flex',gap:4}}>
@@ -1648,6 +1824,13 @@ export default function App(){
           <button className="mb-save" onClick={createGoal} disabled={newGoalLoading||!newGoalDraft.title.trim()}>{newGoalLoading?'Thinking…':'Set goal →'}</button>
         </div>
       </div>
+    </div>}
+
+    {/* Undo toast */}
+    {undoInfo&&<div style={{position:'fixed',bottom:72,left:'50%',transform:'translateX(-50%)',zIndex:400,background:'rgba(24,46,34,.92)',backdropFilter:'blur(12px)',borderRadius:8,padding:'9px 16px',display:'flex',alignItems:'center',gap:12,boxShadow:'0 4px 20px rgba(0,0,0,.28)',animation:'fadeUp .18s ease',whiteSpace:'nowrap'}}>
+      <span style={{color:'rgba(255,255,255,.8)',fontFamily:'var(--m)',fontSize:12}}>{undoInfo.label}</span>
+      <button onClick={handleUndo} style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',color:'#fff',padding:'3px 11px',borderRadius:5,cursor:'pointer',fontFamily:'var(--m)',fontSize:12}}>↩ Undo</button>
+      <button onClick={()=>setUndoInfo(null)} style={{background:'none',border:'none',color:'rgba(255,255,255,.5)',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>×</button>
     </div>}
 
     <style>{`
