@@ -1247,9 +1247,12 @@ export default function App(){
                 </div>
               </div>
               {(()=>{
-                const orderedTasks=taskOrder
-                  .filter(id=>tasks.some(t=>t.id===id&&t.status!=='wont_do'&&matchesHorizon(t,taskHorizon)))
-                  .map(id=>tasks.find(t=>t.id===id)).filter(Boolean)
+                const filtered=tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon))
+                const fromOrder=taskOrder.filter(id=>filtered.some(t=>t.id===id)).map(id=>filtered.find(t=>t.id===id)).filter(Boolean)
+                // Fall back to default sort if taskOrder hasn't synced yet (effect runs after render)
+                const orderedTasks=fromOrder.length>0||filtered.length===0
+                  ?fromOrder
+                  :[...filtered].sort((a,b)=>({do:0,schedule:1,delegate:2,eliminate:3}[a.q]-{do:0,schedule:1,delegate:2,eliminate:3}[b.q])||(a.done-b.done))
                 return(
                 <div style={{padding:'3px 3px 2px'}}
                   onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null)}}>
