@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse } from '@/lib/coo'
+import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse, generateDelegationPlan } from '@/lib/coo'
 import { getImportantEmails, getTodayEvents } from '@/lib/google'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -13,7 +13,8 @@ export async function POST(req) {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const { type, userMessage } = await req.json()
+  const body = await req.json()
+  const { type, userMessage, task: delegateTask, goals: delegateGoals } = body
 
   const [tasks, schedule, userCtx] = await Promise.all([
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey()).then(r => r.data || []),
@@ -59,6 +60,20 @@ export async function POST(req) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
     result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap })
+  } else if (type === 'delegate') {
+    // Delegation plan — COO generates execution plan for user sign-off
+    let emails = [], calendarEvents = []
+    const tokenRow = await supabaseAdmin.from('user_tokens').select('access_token,refresh_token').eq('user_id', userId).maybeSingle().then(r => r.data)
+    if (tokenRow?.access_token) {
+      try {
+        ;[emails, calendarEvents] = await Promise.all([
+          getImportantEmails(tokenRow.access_token, tokenRow.refresh_token),
+          getTodayEvents(tokenRow.access_token, tokenRow.refresh_token),
+        ])
+      } catch {}
+    }
+    const goals = delegateGoals || userCtx?.goals || []
+    result = await generateDelegationPlan({ task: delegateTask || {}, goals, userCtx, emails, calendarEvents })
   } else {
     // Free-form chat — fetch live email + calendar context so the COO can reference them
     let emails = [], calendarEvents = []

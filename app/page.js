@@ -22,7 +22,10 @@ const api={
     generate:(ctx)=>fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ctx)}).then(r=>r.json()),
     patch:(action,slotIndex,extra={})=>fetch('/api/schedule',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,slotIndex,...extra})}).then(r=>r.json()),
   },
-  coo:{checkin:(type,msg)=>fetch('/api/coo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,userMessage:msg})}).then(r=>r.json())},
+  coo:{
+    checkin:(type,msg)=>fetch('/api/coo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,userMessage:msg})}).then(r=>r.json()),
+    delegate:(task,goals)=>fetch('/api/coo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'delegate',task,goals})}).then(r=>r.json()),
+  },
   agents:{
     list:()=>fetch('/api/agents').then(r=>r.json()).catch(()=>({agents:[]})),
     run:(id,silent)=>fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:id,silent})}).then(r=>r.json()),
@@ -425,6 +428,8 @@ export default function App(){
   const[doneChatLoading,setDoneChatLoading]=useState(false)
   const[histTasks,setHistTasks]=useState(null)
   const[histLoading,setHistLoading]=useState(false)
+  const[delegationPlan,setDelegationPlan]=useState(null) // {task, plan} — show sign-off modal
+  const[delegationLoading,setDelegationLoading]=useState(false)
   const[matrixPanel,setMatrixPanel]=useState(null)
   const[matrixEdit,setMatrixEdit]=useState(null)
   const[vetoPanel,setVetoPanel]=useState(null)
@@ -852,6 +857,16 @@ export default function App(){
   }
 
   // ── Schedule-quadrant action ─────────────────────────────────────────────────
+  async function approveDelegation(){
+    if(!delegationPlan)return
+    const{task,plan}=delegationPlan;setDelegationPlan(null)
+    const planNote=`[Delegated — ${plan.risk_level} risk]\n${plan.summary}\n\nSteps:\n${(plan.steps||[]).map(s=>`${s.n}. ${s.action} (${s.owner})`).join('\n')}${plan.approval_note?'\n\nApproval needed: '+plan.approval_note:''}`
+    const updates={q:'delegate',status:'active',notes:planNote}
+    setTasks(ts=>ts.map(x=>x.id===task.id?{...x,...updates}:x))
+    try{await api.tasks.update(task.id,updates)}catch{}
+  }
+  function rejectDelegation(){setDelegationPlan(null)}
+
   async function handleSchedOption(taskId,option){
     const t=tasks.find(x=>x.id===taskId);if(!t)return
     if(option==='manual'){
@@ -860,14 +875,22 @@ export default function App(){
     }else if(option==='auto'){
       setSchedAction({taskId,phase:'auto_horizon'})
     }else if(option==='delegate'){
-      setSchedAction(null);setSchedActLoading(true)
+      setSchedAction(null);setDelegationLoading(true)
       try{
-        await api.coo.checkin('delegate',`Handle this for me and schedule a check-in to discuss progress: "${t.name}" (${t.cat}, ~${t.blocks*15}min)`)
+        const r=await api.coo.delegate(t,goals.filter(g=>g.status==='active'))
+        if(r.result){setDelegationPlan({task:t,plan:r.result})}
+        else{
+          // Fallback: just move to delegate
+          const updates={q:'delegate',status:'active'}
+          setTasks(ts=>ts.map(x=>x.id===taskId?{...x,...updates}:x))
+          await api.tasks.update(taskId,{q:'delegate'})
+        }
+      }catch{
         const updates={q:'delegate',status:'active'}
         setTasks(ts=>ts.map(x=>x.id===taskId?{...x,...updates}:x))
         await api.tasks.update(taskId,{q:'delegate'})
-      }catch{}
-      setSchedActLoading(false)
+      }
+      setDelegationLoading(false)
     }
   }
   async function confirmManualSched(taskId){
@@ -2170,6 +2193,52 @@ export default function App(){
           <button className="mb-cancel" onClick={()=>setNewGoalOpen(false)} disabled={newGoalLoading}>Cancel</button>
           <button className="mb-save" onClick={createGoal} disabled={newGoalLoading||!newGoalDraft.title.trim()}>{newGoalLoading?'Thinking…':'Set goal →'}</button>
         </div>
+      </div>
+    </div>}
+
+    {/* Delegation Plan sign-off modal */}
+    {(delegationPlan||delegationLoading)&&<div style={{position:'fixed',inset:0,background:'rgba(10,28,18,.55)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)',padding:16}}>
+      <div style={{background:'rgba(255,255,255,.97)',borderRadius:16,padding:'20px 22px',maxWidth:500,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,.25)',maxHeight:'80vh',overflow:'auto'}}>
+        {delegationLoading&&!delegationPlan
+          ?<div style={{textAlign:'center',padding:'32px 0',fontFamily:'var(--m)',fontSize:13,color:'var(--txt3)'}}>COO is drafting a plan…</div>
+          :delegationPlan&&(()=>{
+            const{task,plan}=delegationPlan
+            const riskColor=plan.risk_level==='high'?'var(--danger)':plan.risk_level==='medium'?'var(--warn)':'var(--ok)'
+            return(<>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:12}}>
+                <div>
+                  <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.1em',color:'var(--txt3)',marginBottom:3}}>Delegation plan</div>
+                  <div style={{fontFamily:'var(--s)',fontSize:19,fontStyle:'italic',color:'var(--txt)'}}>{task.name}</div>
+                </div>
+                <span style={{fontFamily:'var(--m)',fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:5,background:riskColor+'22',color:riskColor,border:`1px solid ${riskColor}44`,flexShrink:0,marginLeft:10,marginTop:4}}>{plan.risk_level?.toUpperCase()} RISK</span>
+              </div>
+              {plan.coo_message&&<div style={{padding:'9px 11px',background:'rgba(26,90,60,.06)',borderRadius:8,border:'1px solid rgba(26,90,60,.12)',fontFamily:'var(--m)',fontSize:12.5,color:'var(--txt2)',lineHeight:1.55,marginBottom:12}}>{plan.coo_message}</div>}
+              <div style={{marginBottom:12}}>
+                <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.1em',color:'var(--txt3)',marginBottom:6}}>Execution steps</div>
+                {(plan.steps||[]).map(s=>(
+                  <div key={s.n} style={{display:'flex',gap:9,padding:'6px 0',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
+                    <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',width:16,flexShrink:0,paddingTop:1}}>{s.n}.</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13.5,color:'var(--txt)'}}>{s.action}</div>
+                      {s.note&&<div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginTop:1}}>{s.note}</div>}
+                    </div>
+                    <span style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 6px',borderRadius:4,background:'rgba(26,95,168,.08)',color:'var(--sch)',flexShrink:0,alignSelf:'flex-start'}}>{s.owner}</span>
+                  </div>
+                ))}
+              </div>
+              {plan.user_decisions?.length>0&&<div style={{marginBottom:12,padding:'8px 11px',background:'rgba(184,92,0,.06)',border:'1px solid rgba(184,92,0,.18)',borderRadius:8}}>
+                <div style={{fontFamily:'var(--m)',fontSize:10,fontWeight:600,color:'var(--do)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:5}}>Your decisions required</div>
+                {plan.user_decisions.map((d,i)=><div key={i} style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt2)',marginBottom:2}}>• {d}</div>)}
+              </div>}
+              {plan.risk_notes&&<div style={{marginBottom:12,fontFamily:'var(--m)',fontSize:12,color:riskColor,padding:'6px 10px',borderRadius:6,background:riskColor+'11',border:`1px solid ${riskColor}33`}}>⚠ {plan.risk_notes}</div>}
+              {plan.approval_note&&<div style={{marginBottom:14,fontFamily:'var(--m)',fontSize:12,color:'var(--txt2)'}}>Sign-off needed: {plan.approval_note}</div>}
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={approveDelegation} className="btn-primary" style={{flex:2}}>Approve & Delegate ✓</button>
+                <button onClick={rejectDelegation} className="btn-ghost" style={{flex:1}}>Cancel</button>
+              </div>
+            </>)
+          })()
+        }
       </div>
     </div>}
 
