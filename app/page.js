@@ -427,6 +427,7 @@ export default function App(){
   const[doneChat,setDoneChat]=useState('')
   const[doneChatLoading,setDoneChatLoading]=useState(false)
   const[doneChatParsed,setDoneChatParsed]=useState(null) // parsed items awaiting confirm
+  const[doneQueue,setDoneQueue]=useState(()=>{try{return JSON.parse(localStorage.getItem('done_queue')||'[]')}catch{return[]}})
   const[histTasks,setHistTasks]=useState(null)
   const[histLoading,setHistLoading]=useState(false)
   const[delegationPlan,setDelegationPlan]=useState(null) // {task, plan} — show sign-off modal
@@ -763,20 +764,57 @@ export default function App(){
     setLogSubmitting(false)
   }
 
-  async function parseDoneChat(){
-    if(!doneChat.trim())return
+  function queueDoneText(text){
+    const entry={id:Date.now(),text:text.trim(),ts:new Date().toISOString()}
+    const next=[...doneQueue,entry]
+    setDoneQueue(next)
+    try{localStorage.setItem('done_queue',JSON.stringify(next))}catch{}
+    setDoneChat('')
+  }
+  function removeFromQueue(id){
+    const next=doneQueue.filter(e=>e.id!==id)
+    setDoneQueue(next)
+    try{localStorage.setItem('done_queue',JSON.stringify(next))}catch{}
+  }
+  async function parseDoneChat(textOverride){
+    const text=(textOverride||doneChat).trim()
+    if(!text)return
     setDoneChatLoading(true)
     try{
-      const r=await api.coo.checkin('parse_done',doneChat.trim())
+      const r=await api.coo.checkin('parse_done',text)
       const items=Array.isArray(r.result)?r.result:[]
-      if(items.length>0){setDoneChatParsed(items)}
-      else{
-        // Fallback: single task, user categorizes manually
-        await api.tasks.create({name:doneChat.trim(),blocks:1,q:'do',cat:'admin',source:'manual_log',done:true,who:'me'})
-          .then(r=>{if(r.task){setTasks(ts=>[...ts,r.task]);if(r.xp)setLogXp(r.xp);timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))}}).catch(()=>{})
-        setDoneChat('')
+      if(items.length>0){
+        setDoneChatParsed(items)
+        if(!textOverride)setDoneChat('')
+      }else{
+        // COO returned nothing — queue it and acknowledge
+        queueDoneText(text)
       }
-    }catch{}
+    }catch{
+      // Network/server error — queue it, COO will process when ready
+      queueDoneText(text)
+    }
+    setDoneChatLoading(false)
+  }
+  async function retryQueue(){
+    if(!doneQueue.length)return
+    setDoneChatLoading(true)
+    const remaining=[]
+    for(const entry of doneQueue){
+      try{
+        const r=await api.coo.checkin('parse_done',entry.text)
+        const items=Array.isArray(r.result)?r.result:[]
+        if(items.length>0){
+          // Auto-create without review for queued items
+          const results=await Promise.all(items.map(item=>
+            api.tasks.create({name:item.name,blocks:item.blocks||1,q:'do',cat:item.cat||'admin',source:'manual_log',done:true,who:item.who||'me'})
+          ))
+          setTasks(ts=>[...ts,...results.map(r=>r.task).filter(Boolean)])
+        }else{remaining.push(entry)}
+      }catch{remaining.push(entry)}
+    }
+    setDoneQueue(remaining)
+    try{localStorage.setItem('done_queue',JSON.stringify(remaining))}catch{}
     setDoneChatLoading(false)
   }
   async function confirmDoneChat(){
@@ -1330,6 +1368,28 @@ export default function App(){
                   {logXp&&<div style={{marginTop:7,fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',animation:'fadeUp .3s'}}>+{logXp.h_gained} XP · streak {logXp.streak} day{logXp.streak!==1?'s':''} 🌱{logXp.tier_up?` → ${logXp.tier_up.species}!`:''}</div>}
                 </div>
               </div>
+              {/* Queued entries — COO couldn't parse these yet */}
+              {doneQueue.length>0&&<div className="card" style={{border:'1px solid rgba(184,92,0,0.25)',background:'rgba(184,92,0,0.03)'}}>
+                <div style={{padding:'8px 13px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div>
+                    <div style={{fontFamily:'var(--m)',fontSize:11,fontWeight:600,color:'var(--do)'}}>Queued — waiting for COO</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:1}}>Saved locally · COO will parse when ready</div>
+                  </div>
+                  <button onClick={retryQueue} disabled={doneChatLoading} style={{fontFamily:'var(--m)',fontSize:11,padding:'3px 9px',borderRadius:5,border:'1px solid rgba(184,92,0,.3)',background:'rgba(184,92,0,.08)',color:'var(--do)',cursor:'pointer',opacity:doneChatLoading?.5:1}}>
+                    {doneChatLoading?'…':'↺ Retry'}
+                  </button>
+                </div>
+                {doneQueue.map(entry=>(
+                  <div key={entry.id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'7px 13px',borderTop:'1px solid rgba(0,0,0,.05)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,color:'var(--txt)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{entry.text}</div>
+                      <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',marginTop:2}}>{new Date(entry.ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+                    </div>
+                    <button onClick={()=>{setDoneChat(entry.text);removeFromQueue(entry.id)}} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer',flexShrink:0,marginTop:2}}>Edit</button>
+                    <button onClick={()=>removeFromQueue(entry.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--txt3)',fontSize:14,padding:'0 2px',flexShrink:0}}>×</button>
+                  </div>
+                ))}
+              </div>}
               {/* Quick log */}
               <div className="card" style={{border:'2px solid rgba(15,110,86,0.3)'}}>
                 <div className="card-hdr"><span className="card-title">Log a win</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{doneTasks.length} done · {totalMin}m total</span></div>
