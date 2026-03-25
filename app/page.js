@@ -939,12 +939,12 @@ export default function App(){
   const pendingSlots=schedule?.slots?.filter(s=>s.taskId&&(s.state==='pending'||s.state==='optional')).length||0
   const alertAgents=agents.filter(a=>a.status==='alert').length
   const navItems=[
-    {id:'done',icon:'✓',label:'Done list',badge:doneTasks.length,bc:'var(--ok)'},
+    {id:'done',icon:'✓',label:'Done',badge:doneTasks.length,bc:'var(--ok)'},
     {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
     {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
     {id:'goals',icon:'🎯',label:'Goals',badge:goals.filter(g=>g.status==='active').length,bc:'var(--ok)'},
-    {id:'tree',icon:'🌲',label:'Life tree',badge:0,bc:''},
+    {id:'tree',icon:'🌲',label:'Tree',badge:0,bc:''},
     {id:'log',icon:'◻',label:'Log',badge:0,bc:''},
     {id:'settings',icon:'⚙',label:'Settings',badge:0,bc:''},
   ]
@@ -1394,7 +1394,7 @@ export default function App(){
                 )}
               </div>
             )}
-            <MatrixCanvas tasks={tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon))} onToggle={handleMatrixClick} selectedId={matrixPanel?.id} onZoneClick={handleZoneClick} onMatrixDrop={handleDropOnMatrix}/>
+            <MatrixCanvas tasks={tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon)&&!(t.done&&t.source==='manual_log'))} onToggle={handleMatrixClick} selectedId={matrixPanel?.id} onZoneClick={handleZoneClick} onMatrixDrop={handleDropOnMatrix}/>
             {/* Matrix task action panel */}
             {matrixPanel&&(()=>{
               const t=matrixPanel
@@ -1512,7 +1512,7 @@ export default function App(){
                 </div>
               </div>
               {(()=>{
-                const filtered=tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon))
+                const filtered=tasks.filter(t=>t.status!=='wont_do'&&matchesHorizon(t,taskHorizon)&&!(t.done&&t.source==='manual_log'))
                 const fromOrder=taskOrder.filter(id=>filtered.some(t=>t.id===id)).map(id=>filtered.find(t=>t.id===id)).filter(Boolean)
                 // Fall back to default sort if taskOrder hasn't synced yet (effect runs after render)
                 const orderedTasks=fromOrder.length>0||filtered.length===0
@@ -2087,9 +2087,10 @@ export default function App(){
       {/* MOBILE BOTTOM NAV */}
       <div style={{display:'none',position:'fixed',bottom:0,left:0,right:0,background:'var(--glass)',backdropFilter:'blur(22px)',WebkitBackdropFilter:'blur(22px)',borderTop:'1px solid var(--gb)',padding:'8px 0 env(safe-area-inset-bottom,10px)',zIndex:200,flexDirection:'row'}} id="mob-nav">
         {navItems.map(({icon,label,id,badge,bc})=>(
-          <button key={id} onClick={()=>{setView(id);if(id==='schedule'&&!schedule)generateSchedule();if(id==='tree'&&!treeData)loadTree()}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',border:'none',background:'transparent',color:view===id?'var(--acc2)':'var(--txt3)',fontSize:11,fontFamily:'var(--f)',padding:'3px 0',position:'relative'}}>
-            <span style={{fontSize:19,lineHeight:1}}>{icon}</span><span>{label}</span>
-            {badge>0&&<span style={{position:'absolute',top:0,right:'18%',width:8,height:8,borderRadius:'50%',background:bc}}/>}
+          <button key={id} onClick={()=>{setView(id);if(id==='schedule'&&!schedule)generateSchedule();if(id==='tree'&&!treeData)loadTree()}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1,cursor:'pointer',border:'none',background:'transparent',color:view===id?'var(--acc2)':'var(--txt3)',fontSize:9.5,fontFamily:'var(--m)',padding:'3px 0',position:'relative',minWidth:0}}>
+            <span style={{fontSize:17,lineHeight:1}}>{icon}</span>
+            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'100%',letterSpacing:'-.01em'}}>{label}</span>
+            {badge>0&&<span style={{position:'absolute',top:1,right:'12%',width:7,height:7,borderRadius:'50%',background:bc}}/>}
           </button>
         ))}
       </div>
@@ -2260,7 +2261,7 @@ export default function App(){
       @keyframes spin{to{transform:rotate(360deg)}}
       @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
       @keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-      @media(max-width:680px){nav{display:none!important}#mob-nav{display:flex!important}.scroll{padding:11px 11px!important}}
+      @media(max-width:680px){nav{display:none!important}#mob-nav{display:flex!important}.scroll{padding:11px 11px calc(72px + env(safe-area-inset-bottom, 12px))!important}}
     `}</style>
     </>
   )
