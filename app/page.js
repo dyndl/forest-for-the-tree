@@ -559,7 +559,11 @@ export default function App(){
   async function generateSchedule(){
     setSchedLoading(true);setSchedError(null);setCooState('thinking');setCooLabel('Building your day…')
     try{
-      const{schedule:s,error,proposed_tasks}=await api.schedule.generate({roadmap:settings?.roadmap})
+      const now=new Date()
+      // Pass local date/hour so the server doesn't use UTC and plan the wrong day
+      const localDate=now.toLocaleDateString('en-CA') // YYYY-MM-DD in local TZ
+      const localTomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toLocaleDateString('en-CA')
+      const{schedule:s,error,proposed_tasks}=await api.schedule.generate({roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow})
       if(error)throw new Error(error)
       if(s)setSchedule(s)
       // Merge proposed tasks into matrix (replace any previous coo-proposed for same date)
@@ -2093,8 +2097,11 @@ export default function App(){
 
     {/* CHECK-IN */}
     {checkin&&<div style={{position:'fixed',inset:0,background:'rgba(10,28,18,.48)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)',padding:14}} onClick={e=>e.target===e.currentTarget&&(setCheckin(null),setCheckinResult(null))}>
-      <div style={{background:'rgba(255,255,255,.93)',backdropFilter:'blur(26px)',border:'1px solid rgba(255,255,255,.88)',borderRadius:20,width:'100%',maxWidth:360,padding:'18px 18px 14px',boxShadow:'0 22px 55px rgba(20,60,35,.22)'}}>
-        <div style={{fontFamily:'var(--s)',fontSize:20,fontStyle:'italic',color:'var(--txt)',marginBottom:12}}>{checkin==='evening'?'Evening retro':'Check-in'}</div>
+      <div style={{background:'rgba(255,255,255,.93)',backdropFilter:'blur(26px)',border:'1px solid rgba(255,255,255,.88)',borderRadius:20,width:'100%',maxWidth:360,maxHeight:'88vh',overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'18px 18px 14px',boxShadow:'0 22px 55px rgba(20,60,35,.22)',display:'flex',flexDirection:'column'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexShrink:0}}>
+          <div style={{fontFamily:'var(--s)',fontSize:20,fontStyle:'italic',color:'var(--txt)'}}>{checkin==='evening'?'Evening retro':'Check-in'}</div>
+          <button onClick={()=>{setCheckin(null);setCheckinResult(null)}} style={{background:'rgba(0,0,0,.06)',border:'none',borderRadius:'50%',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'var(--txt3)',flexShrink:0}}>×</button>
+        </div>
         {!checkinResult?<>
           <p style={{fontSize:14,color:'var(--txt2)',marginBottom:12,lineHeight:1.6}}>{checkin==='midday'?"How's it going? Any blockers?":checkin==='afternoon'?"Afternoon check — what got done?":"Day wrapping up — quick retro?"}</p>
           <textarea className="fm-in" value={checkinMsg} onChange={e=>setCheckinMsg(e.target.value)} rows={3} placeholder="Optional — a few words is fine…" style={{resize:'none',width:'100%'}}/>

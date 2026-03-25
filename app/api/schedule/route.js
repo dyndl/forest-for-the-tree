@@ -43,13 +43,15 @@ export async function POST(req) {
 
   const userId = session.user.email
   const body = await req.json()
-  const currentHour = new Date().getHours()
+  // Use client-supplied local hour/date to avoid UTC server clock mismatches
+  const currentHour = typeof body.localHour === 'number' ? body.localHour : new Date().getHours()
+  const localToday = body.localDate || todayKey()
   const planForTomorrow = currentHour >= 14
 
   // For tomorrow plans: fetch all open (not wont_do, not done) tasks regardless of date
   const tasksQuery = planForTomorrow
     ? supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('done', false).neq('status', 'wont_do')
-    : supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey())
+    : supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', localToday)
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const [tasks, userCtx, ouraConnector, recentScheds, agentRows] = await Promise.all([
@@ -111,13 +113,17 @@ export async function POST(req) {
     ouraData,
     userContext: userCtx,
     currentHour,
+    localDate: localToday,
+    localTomorrow,
     vetoHistory,
     agentContributions,
   })
 
   if (!plan) return Response.json({ error: 'COO failed to generate plan' }, { status: 500 })
 
-  const planDate = plan.plan_date || (planForTomorrow ? tomorrowKey() : todayKey())
+  // Prefer COO-set plan_date, then client-derived local dates, then server UTC fallback
+  const localTomorrow = body.localTomorrow || tomorrowKey()
+  const planDate = plan.plan_date || (planForTomorrow ? localTomorrow : localToday)
   const slots = plan.slots.map(s => ({
     ...s,
     taskId: s.task_id || null,
