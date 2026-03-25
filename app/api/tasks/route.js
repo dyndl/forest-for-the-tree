@@ -47,7 +47,7 @@ export async function POST(req) {
     blocks: body.blocks || 2,
     who: body.who || 'me',
     notes: body.notes || '',
-    done: false,
+    done: body.done ?? false,
     date: body.date || todayKey(),
     source: body.source || 'manual',
     google_task_id: null,
