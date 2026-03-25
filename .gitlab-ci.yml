@@ -1,10 +1,11 @@
 # ── Forest for the Trees — GitLab CI ─────────────────────────────────────────
 # Controls when changes mirror to GitHub.
 #
-# Branch model:
+# Branch model (MVP+ phase):
 #   main    → GitLab only (your working branch, never auto-mirrors)
-#   beta    → auto-mirrors to GitHub 'beta' branch on every merge
-#   stable  → mirrors to GitHub 'main' branch, requires manual approval
+#   beta    → auto-mirrors to GitHub 'beta' AND 'main' → Vercel deploys to iPhone
+#   stable  → mirrors to GitHub 'stable' branch, requires manual approval
+#             (post-MVP+: flip Vercel production to 'stable', remove main push from beta job)
 #
 # Required GitLab CI/CD variables (Settings → CI/CD → Variables):
 #   GITHUB_TOKEN   — GitHub personal access token (repo scope)
@@ -29,9 +30,10 @@ mirror_beta:
   rules:
     - if: '$CI_COMMIT_BRANCH == "beta"'
   script:
-    - echo "Mirroring beta → GitHub beta branch..."
+    - echo "Mirroring beta → GitHub beta + main (Vercel production)..."
     - git push github HEAD:refs/heads/beta --force
-    - echo "✓ GitHub beta updated (commit $CI_COMMIT_SHORT_SHA)"
+    - git push github HEAD:refs/heads/main --force
+    - echo "✓ GitHub beta + main updated (commit $CI_COMMIT_SHORT_SHA)"
 
 # ── Stable mirror — manual trigger only, pushes to GitHub main ───────────────
 mirror_stable:
@@ -40,9 +42,9 @@ mirror_stable:
     - if: '$CI_COMMIT_BRANCH == "stable"'
       when: manual   # ← requires a human to click "Run" in GitLab CI UI
   script:
-    - echo "Mirroring stable → GitHub main branch..."
-    - git push github HEAD:refs/heads/main --force
-    - echo "✓ GitHub main updated — public stable release (commit $CI_COMMIT_SHORT_SHA)"
+    - echo "Mirroring stable → GitHub stable branch..."
+    - git push github HEAD:refs/heads/stable --force
+    - echo "✓ GitHub stable updated — approved release (commit $CI_COMMIT_SHORT_SHA)"
   environment:
     name: github-stable
     url: https://github.com/${GITHUB_REPO}
