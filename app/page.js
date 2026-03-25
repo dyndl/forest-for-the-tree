@@ -426,6 +426,7 @@ export default function App(){
   const[logXp,setLogXp]=useState(null)
   const[doneChat,setDoneChat]=useState('')
   const[doneChatLoading,setDoneChatLoading]=useState(false)
+  const[doneChatParsed,setDoneChatParsed]=useState(null) // parsed items awaiting confirm
   const[histTasks,setHistTasks]=useState(null)
   const[histLoading,setHistLoading]=useState(false)
   const[delegationPlan,setDelegationPlan]=useState(null) // {task, plan} — show sign-off modal
@@ -762,16 +763,38 @@ export default function App(){
     setLogSubmitting(false)
   }
 
-  async function sendDoneChat(who){
+  async function parseDoneChat(){
     if(!doneChat.trim())return
-    const msg=doneChat.trim();setDoneChat('');setDoneChatLoading(true)
+    setDoneChatLoading(true)
     try{
-      const r=await api.tasks.create({name:msg,blocks:1,q:'do',cat:'admin',source:'manual_log',done:true,who:who||'me'})
-      if(r.task){
-        setTasks(ts=>[...ts,r.task])
-        if(r.xp)setLogXp(r.xp)
+      const r=await api.coo.checkin('parse_done',doneChat.trim())
+      const items=Array.isArray(r.result)?r.result:[]
+      if(items.length>0){setDoneChatParsed(items)}
+      else{
+        // Fallback: single task, user categorizes manually
+        await api.tasks.create({name:doneChat.trim(),blocks:1,q:'do',cat:'admin',source:'manual_log',done:true,who:'me'})
+          .then(r=>{if(r.task){setTasks(ts=>[...ts,r.task]);if(r.xp)setLogXp(r.xp);timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))}}).catch(()=>{})
+        setDoneChat('')
+      }
+    }catch{}
+    setDoneChatLoading(false)
+  }
+  async function confirmDoneChat(){
+    if(!doneChatParsed?.length)return
+    setDoneChatLoading(true)
+    try{
+      const results=await Promise.all(doneChatParsed.map(item=>
+        api.tasks.create({name:item.name,blocks:item.blocks||1,q:'do',cat:item.cat||'admin',source:'manual_log',done:true,who:item.who||'me'})
+      ))
+      const created=results.map(r=>r.task).filter(Boolean)
+      if(created.length){
+        setTasks(ts=>[...ts,...created])
+        const lastXp=results.find(r=>r.xp)?.xp
+        if(lastXp)setLogXp(lastXp)
         timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))
       }
+      setDoneChatParsed(null)
+      setDoneChat('')
     }catch{}
     setDoneChatLoading(false)
   }
@@ -1269,21 +1292,41 @@ export default function App(){
               <div className="card" style={{border:'1px solid rgba(26,95,168,0.22)'}}>
                 <div className="card-hdr">
                   <span className="card-title">Tell COO what got done</span>
-                  <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>COO categorizes it</span>
+                  <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>one item or a whole list</span>
                 </div>
                 <div style={{padding:'10px 13px 12px'}}>
-                  <input value={doneChat} onChange={e=>setDoneChat(e.target.value)}
-                    onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&!doneChatLoading&&doneChat.trim()&&sendDoneChat('me')}
-                    placeholder="e.g. Fixed the auth bug · John sent the report · Finished client deck"
-                    className="fm-in" style={{width:'100%',marginBottom:8}}/>
-                  <div style={{display:'flex',gap:7}}>
-                    <button onClick={()=>sendDoneChat('me')} disabled={doneChatLoading||!doneChat.trim()} className="btn-primary" style={{flex:1}}>
-                      {doneChatLoading?'…':'✓ I did it'}
-                    </button>
-                    <button onClick={()=>sendDoneChat('team')} disabled={doneChatLoading||!doneChat.trim()} className="btn-ghost" style={{flex:1}}>
-                      {doneChatLoading?'…':'→ Someone else did it'}
-                    </button>
-                  </div>
+                  {!doneChatParsed
+                    ?<>
+                      <textarea value={doneChat} onChange={e=>setDoneChat(e.target.value)}
+                        onKeyDown={e=>e.key==='Enter'&&e.metaKey&&!doneChatLoading&&doneChat.trim()&&parseDoneChat()}
+                        placeholder={'Fixed the auth bug\nJohn sent the report\nFinished client deck\n…paste or type, one per line'}
+                        className="fm-in" rows={3} style={{width:'100%',resize:'none',marginBottom:8}}/>
+                      <button onClick={parseDoneChat} disabled={doneChatLoading||!doneChat.trim()} className="btn-primary" style={{width:'100%'}}>
+                        {doneChatLoading?'COO is sorting these…':'Log with COO ✓'}
+                      </button>
+                    </>
+                    :<>
+                      <div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:7}}>COO sorted {doneChatParsed.length} task{doneChatParsed.length!==1?'s':''} — review &amp; confirm</div>
+                      {doneChatParsed.map((item,i)=>(
+                        <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
+                          <span style={{fontSize:12,color:'var(--ok)',flexShrink:0}}>✓</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+                          </div>
+                          <span className={`pill pc-${item.cat}`}>{item.cat}</span>
+                          <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',flexShrink:0}}>{item.blocks*15}m</span>
+                          {item.who!=='me'&&<span style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 5px',borderRadius:3,background:'rgba(26,95,168,.08)',color:'var(--sch)',flexShrink:0}}>{item.who}</span>}
+                          <button onClick={()=>setDoneChatParsed(p=>p.filter((_,j)=>j!==i))} style={{background:'none',border:'none',cursor:'pointer',color:'var(--txt3)',fontSize:13,padding:'0 2px',flexShrink:0}}>×</button>
+                        </div>
+                      ))}
+                      <div style={{display:'flex',gap:7,marginTop:10}}>
+                        <button onClick={confirmDoneChat} disabled={doneChatLoading||!doneChatParsed.length} className="btn-primary" style={{flex:2}}>
+                          {doneChatLoading?'…':`Log all ${doneChatParsed.length} ✓`}
+                        </button>
+                        <button onClick={()=>setDoneChatParsed(null)} className="btn-ghost" style={{flex:1}}>Edit</button>
+                      </div>
+                    </>
+                  }
                   {logXp&&<div style={{marginTop:7,fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',animation:'fadeUp .3s'}}>+{logXp.h_gained} XP · streak {logXp.streak} day{logXp.streak!==1?'s':''} 🌱{logXp.tier_up?` → ${logXp.tier_up.species}!`:''}</div>}
                 </div>
               </div>
