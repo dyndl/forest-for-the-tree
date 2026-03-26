@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse, generateDelegationPlan, parseDoneList } from '@/lib/coo'
+import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse, generateDelegationPlan, parseDoneList, generateWeeklyFeedback } from '@/lib/coo'
 import { getImportantEmails, getTodayEvents } from '@/lib/google'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -14,7 +14,7 @@ export async function POST(req) {
 
   const userId = session.user.email
   const body = await req.json()
-  const { type, userMessage, task: delegateTask, goals: delegateGoals } = body
+  const { type, userMessage, task: delegateTask, goals: delegateGoals, digestId, feedback } = body
 
   const [tasks, schedule, userCtx] = await Promise.all([
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey()).then(r => r.data || []),
@@ -60,6 +60,19 @@ export async function POST(req) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
     result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap })
+  } else if (type === 'weekly_feedback') {
+    // User responded to weekly digest — update final_message + clear pending flag
+    const { digestId, feedback } = body
+    const { data: digestRow } = await supabaseAdmin.from('weekly_digests').select('*').eq('id', digestId).eq('user_id', userId).maybeSingle()
+    if (digestRow) {
+      const fb = await generateWeeklyFeedback({ digest: digestRow.digest, userFeedback: feedback })
+      const finalMessage = fb?.final_message || feedback
+      await supabaseAdmin.from('weekly_digests').update({ user_feedback: feedback, final_message: finalMessage }).eq('id', digestId)
+      await supabaseAdmin.from('user_context').update({ pending_weekly_digest: false, updated_at: new Date().toISOString() }).eq('user_id', userId)
+      result = { message: finalMessage }
+    } else {
+      result = { message: 'Thanks for the feedback!' }
+    }
   } else if (type === 'parse_done') {
     const lifeAreas = userCtx?.life_areas || []
     result = await parseDoneList({ text: userMessage, lifeAreas, userCtx })

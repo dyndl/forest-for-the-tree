@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useRealtime } from '@/lib/realtime'
 import dynamicImport from 'next/dynamic'
 const TreeView=dynamicImport(()=>import('@/components/TreeView'),{ssr:false,loading:()=>null})
+const TreeSidePanel=dynamicImport(()=>import('@/components/TreeSidePanel'),{ssr:false,loading:()=>null})
 const SettingsPanel=dynamicImport(()=>import('@/components/SettingsPanel'),{ssr:false,loading:()=>null})
 
 const CAT_COLORS={career:'#b85c00',interview:'#0f6e56',learning:'#1a5fa8',fitness:'#8a2828',family:'#6a2878',admin:'#5a4800',finance:'#0f5a3c'}
@@ -31,7 +32,15 @@ const api={
     run:(id,silent)=>fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:id,silent})}).then(r=>r.json()),
     update:(id,u)=>fetch('/api/agents',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,...u})}).then(r=>r.json()),
   },
-  settings:{get:()=>fetch('/api/settings').then(r=>r.json()).catch(()=>({settings:{}}))},
+  settings:{
+    get:()=>fetch('/api/settings').then(r=>r.json()).catch(()=>({settings:{}})),
+    patch:(body)=>fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({})),
+  },
+  jobs:{
+    get:()=>fetch('/api/jobs').then(r=>r.json()).catch(()=>({leads:[],backlog_count:0})),
+    refresh:()=>fetch('/api/jobs?refresh=true',{method:'POST'}).then(r=>r.json()).catch(()=>({leads:[],backlog_count:0})),
+    patch:(body)=>fetch('/api/jobs',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({})),
+  },
   propose:{
     get:()=>fetch('/api/tasks/propose').then(r=>r.json()),
     regen:()=>fetch('/api/tasks/propose',{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()),
@@ -399,6 +408,12 @@ export default function App(){
   const[isOnline,setIsOnline]=useState(true)
   const[isSunday]=useState(new Date().getDay()===0)
   const[weeklyBrief,setWeeklyBrief]=useState(null)
+  const[weeklyDigest,setWeeklyDigest]=useState(null)
+  const[weeklyFeedbackMsg,setWeeklyFeedbackMsg]=useState('')
+  const[weeklyFeedbackLoading,setWeeklyFeedbackLoading]=useState(false)
+  const[jobData,setJobData]=useState(null)
+  const[jobLoading,setJobLoading]=useState(false)
+  const[treePanelOpen,setTreePanelOpen]=useState(false)
   const[treeData,setTreeData]=useState(null)
   const[treeLoading,setTreeLoading]=useState(false)
   const[treeGran,setTreeGran]=useState('year')
@@ -508,6 +523,8 @@ export default function App(){
   // Initial load + onboarding redirect
   useEffect(()=>{
     if(status!=='authenticated')return
+    // One-time timezone sync — patch silently if not yet stored
+    try{const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;if(tz)api.settings.patch({timezone:tz}).catch(()=>{})}catch{}
     api.settings.get().then(r=>{
       const s = r?.settings
       setSettings(s ?? null)
@@ -519,6 +536,10 @@ export default function App(){
         api.oura.get().then(r=>setOura(r)),
       ])
       api.propose.get().then(r=>{if(r.proposals)setProposals(r.proposals)})
+      // Load pending weekly digest if Sunday
+      if(new Date().getDay()===0){
+        fetch('/api/jobs/weekly-digest').then(r=>r.json()).then(r=>{if(r.digest)setWeeklyDigest(r)}).catch(()=>{})
+      }
       api.goals.get().then(r=>{
         const g=r.goals||[]
         setGoals(g)
@@ -598,6 +619,15 @@ export default function App(){
   }
   async function acceptSlot(idx){try{const{slots}=await api.schedule.patch('accept',idx);if(slots)setSchedule(s=>({...s,slots}))}catch{}}
   async function acceptAll(){try{const{slots}=await api.schedule.patch('accept_all',0);if(slots)setSchedule(s=>({...s,slots}))}catch{};setCooState('ok');setCooLabel('All accepted')}
+
+  async function loadJobs(refresh=false){
+    setJobLoading(true)
+    try{
+      const r=refresh?await api.jobs.refresh():await api.jobs.get()
+      setJobData(r)
+    }catch{}
+    setJobLoading(false)
+  }
 
   async function loadTree(){
     setTreeLoading(true)
@@ -995,7 +1025,7 @@ export default function App(){
     </div></>
   )
 
-  const viewTitle={done:'Done list',home:"Today's field",schedule:'COO Schedule',agents:'Agent network',log:'Performance log',settings:'Settings',tree:'Life tree',goals:'Goals'}
+  const viewTitle={done:'Done list',home:"Today's field",schedule:'COO Schedule',agents:'Agent network',log:'Performance log',settings:'Settings',tree:'Life tree',goals:'Goals',jobs:'Job leads'}
   const statusColor={idle:'#b0ccb8',thinking:'#b85c00',alert:'#8a2828',ok:'#0f6e56'}
   const pendingSlots=schedule?.slots?.filter(s=>s.taskId&&(s.state==='pending'||s.state==='optional')).length||0
   const alertAgents=agents.filter(a=>a.status==='alert').length
@@ -1003,6 +1033,7 @@ export default function App(){
     {id:'done',icon:'✓',label:'Done',badge:doneTasks.length,bc:'var(--ok)'},
     {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
+    {id:'jobs',icon:'📬',label:'Jobs',badge:jobData?.leads?.filter(l=>l.status==='new').length||0,bc:'var(--sch)'},
     {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
     {id:'goals',icon:'🎯',label:'Goals',badge:goals.filter(g=>g.status==='active').length,bc:'var(--ok)'},
     {id:'tree',icon:'🌲',label:'Tree',badge:0,bc:''},
@@ -1047,7 +1078,7 @@ export default function App(){
           {navItems.map(item=>{
             const active=view===item.id
             return(
-            <button key={item.id} onClick={()=>{setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule();if(item.id==='tree'&&!treeData)loadTree()}}
+            <button key={item.id} onClick={()=>{setView(item.id);if(item.id==='schedule'&&!schedule)generateSchedule();if(item.id==='tree'&&!treeData)loadTree();if(item.id==='jobs'&&!jobData)loadJobs()}}
               style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px 7px 7px',borderRadius:'var(--r)',cursor:'pointer',color:active?'#fff':'var(--txt2)',fontSize:14,border:'none',background:active?'var(--acc2)':'transparent',width:'100%',textAlign:'left',fontFamily:'var(--f)',fontWeight:active?600:400,transition:'all .13s',position:'relative'}}>
               <span style={{width:4,position:'absolute',left:0,top:'20%',bottom:'20%',borderRadius:'0 3px 3px 0',background:active?'rgba(255,255,255,0.6)':'transparent',transition:'all .13s'}}/>
               <span style={{fontSize:15,width:18,textAlign:'center',flexShrink:0}}>{item.icon}</span>
@@ -1079,184 +1110,119 @@ export default function App(){
             {view==='schedule'&&<><button className="btn-ghost" onClick={generateSchedule} disabled={schedLoading}>↺ Re-plan</button><button className="btn-primary" onClick={acceptAll}>Accept all</button></>}
             {view==='agents'&&<button className="btn-primary" onClick={()=>setShowAddAgent(true)}>+ Agent</button>}
             {view==='goals'&&<button className="btn-primary" onClick={()=>setNewGoalOpen(true)}>+ Goal</button>}
+            {view==='jobs'&&<button className="btn-ghost" onClick={()=>loadJobs(true)} disabled={jobLoading}>↺ Refresh</button>}
           </div>
         </div>
 
         {view==='tree'
-          ?<div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden'}}>
-            <div style={{flex:1,minHeight:0,overflow:'hidden',borderRadius:'var(--r2)',margin:'8px 0 8px 8px'}}>
+          ?<div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden',position:'relative'}}>
+            {/* Tree pane — flex:1 on desktop, full width on mobile */}
+            <div style={{flex:1,minHeight:0,overflow:'hidden',borderRadius:'var(--r2)',margin:'8px 0 8px 8px',minWidth:0}}>
               {treeLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',fontFamily:'var(--m)',fontSize:13,color:'var(--txt3)'}}>Growing your tree…</div>}
               {!treeLoading&&<TreeView treeData={treeData} treeLoading={treeLoading} treeError={null} gran={treeGran} onGranChange={setTreeGran}/>}
+              {/* Mobile stats button */}
+              <button onClick={()=>setTreePanelOpen(true)} style={{display:'none',position:'absolute',bottom:52,right:12,zIndex:20,padding:'7px 14px',borderRadius:20,background:'rgba(26,90,60,.88)',backdropFilter:'blur(8px)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontFamily:'var(--m)',fontSize:12,cursor:'pointer'}} className="tree-stats-btn">⚙ Stats</button>
             </div>
-            {/* ── SIDE PANEL ─────────────────────────────────────────── */}
-            {(()=>{
-              const sp=treeData?.species
-              const cat=treeData?.current_catalog_row
-              const next=treeData?.next_milestone
-              const catalog=treeData?.catalog||[]
-              const currentTier=sp?.current_tier||1
-              const hXP=sp?.height_xp||0
-              const wXP=sp?.width_xp||0
-              const streak=sp?.current_streak||0
-              const longestStreak=sp?.longest_streak||0
-              const streakMult=Math.round(Math.min(2.5,1.0+streak*0.05)*100)/100
-              const nextMilestoneStreak=streak<3?3:streak<7?7:streak<14?14:streak<21?21:streak<30?30:null
-              const nextMilestoneBonus=nextMilestoneStreak?Math.round(Math.min(2.5,1.0+nextMilestoneStreak*0.05)*100)/100:null
-              // XP targets from next species dimensions (rough approximation)
-              const nextH=next?Math.round(next.height_ft*60):Math.max(hXP*1.5,100)
-              const nextW=next?Math.round(next.width_ft*180):Math.max(wXP*1.5,100)
-              // Group catalog into tier groups
-              const groups={}
-              catalog.forEach(r=>{
-                if(!groups[r.tier_group])groups[r.tier_group]={name:r.group_name,minTier:r.tier,maxTier:r.tier,species:[]}
-                groups[r.tier_group].species.push(r)
-                groups[r.tier_group].minTier=Math.min(groups[r.tier_group].minTier,r.tier)
-                groups[r.tier_group].maxTier=Math.max(groups[r.tier_group].maxTier,r.tier)
-              })
-              const groupList=Object.entries(groups).map(([g,v])=>({...v,id:+g})).sort((a,b)=>a.minTier-b.minTier)
-              const activeTierGroup=catalog.find(r=>r.tier===currentTier)?.tier_group
-              return(
-                <div style={{width:240,flexShrink:0,borderLeft:'1px solid rgba(0,0,0,.09)',background:'rgba(250,249,246,.98)',display:'flex',flexDirection:'column',overflowY:'auto',fontSize:14}}>
-                  {/* Species header */}
-                  <div style={{padding:'14px 14px 10px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:5}}>
-                      <span style={{fontFamily:'var(--m)',fontSize:11,fontWeight:700,color:'#182e22',letterSpacing:'.1em',textTransform:'uppercase'}}>LEVEL {currentTier}</span>
-                      <span style={{width:4,height:4,borderRadius:'50%',background:'#4a9e6b',display:'inline-block'}}/>
-                    </div>
-                    <div style={{fontFamily:'var(--m)',fontSize:11,color:'#7aaa8a',marginBottom:7}}>{cat?.group_name||'—'}</div>
-                    <div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:22,fontWeight:600,color:'#182e22',marginBottom:2,lineHeight:1.2}}>{cat?.emoji||sp?.species_emoji||'🌿'} {cat?.name||sp?.species_name||'Seedling'}</div>
-                    {cat?.height_ft&&<div style={{fontFamily:'var(--m)',fontSize:11,color:'#7aaa8a',marginBottom:8}}>{cat.height_ft} ft height · {cat.width_ft} ft wide</div>}
-                    {cat?.fact&&<div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:13,fontStyle:'italic',color:'#3a5c47',lineHeight:1.55,marginBottom:3}}>{cat.fact}</div>}
-                    {cat?.exemplar&&<div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:12,fontStyle:'italic',color:'#7aaa8a',lineHeight:1.4}}>"{cat.exemplar}"</div>}
-                  </div>
-                  {/* XP progress */}
-                  <div style={{padding:'12px 14px 10px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
-                    <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.12em',color:'#7aaa8a',marginBottom:10}}>Progress</div>
-                    {[['Height XP · mastery',hXP,nextH,'#4a9e6b'],['Width XP · impact',wXP,nextW,'#1a5fa8']].map(([label,val,max,col])=>(
-                      <div key={label} style={{marginBottom:10}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
-                          <span style={{fontFamily:'var(--m)',fontSize:11,color:'#3a5c47'}}>{label}</span>
-                          <span style={{fontFamily:'var(--m)',fontSize:11,color:'#182e22',fontWeight:500}}>{val.toLocaleString()} / {max.toLocaleString()}</span>
-                        </div>
-                        <div style={{height:4,borderRadius:2,background:'rgba(0,0,0,.07)',overflow:'hidden'}}>
-                          <div style={{height:'100%',borderRadius:2,background:col,width:`${Math.min(100,(val/Math.max(max,1))*100).toFixed(1)}%`,transition:'width .4s'}}/>
-                        </div>
-                      </div>
-                    ))}
-                    {next&&<div style={{fontFamily:'var(--m)',fontSize:10.5,color:'#7aaa8a',marginTop:2}}>Next: {next.emoji} {next.name} #{next.tier} · +{(nextH-hXP).toLocaleString()} H · +{(nextW-wXP).toLocaleString()} W</div>}
-                  </div>
-                  {/* Streak */}
-                  <div style={{padding:'10px 14px 10px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5}}>
-                      <div style={{display:'flex',alignItems:'center',gap:5}}>
-                        <span style={{fontSize:15}}>🔥</span>
-                        <span style={{fontFamily:'var(--m)',fontSize:11,fontWeight:600,color:streak>=7?'#b85c00':'#3a5c47'}}>{streak} day streak</span>
-                      </div>
-                      <span style={{fontFamily:'var(--m)',fontSize:11,color:'#1a5a3c',fontWeight:600}}>{streakMult}×</span>
-                    </div>
-                    {streak>0&&(
-                      <div style={{height:3,borderRadius:2,background:'rgba(0,0,0,.07)',overflow:'hidden',marginBottom:4}}>
-                        <div style={{height:'100%',borderRadius:2,background:'linear-gradient(90deg,#b85c00,#e8a030)',width:`${Math.min(100,(streak/30)*100)}%`,transition:'width .4s'}}/>
-                      </div>
-                    )}
-                    <div style={{fontFamily:'var(--m)',fontSize:10,color:'#7aaa8a'}}>
-                      {streak===0?'Complete a task to start your streak':
-                       nextMilestoneStreak?`${nextMilestoneStreak-streak} more days → ${nextMilestoneBonus}× bonus`:`Max bonus reached! 2.5× XP on every task`}
-                      {longestStreak>streak&&longestStreak>0&&<span style={{marginLeft:6,opacity:.6}}>· best: {longestStreak}</span>}
-                    </div>
-                  </div>
-                  {/* Tier ladder */}
-                  <div style={{padding:'12px 14px 10px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
-                    <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.12em',color:'#7aaa8a',marginBottom:8}}>Tier Ladder</div>
-                    {groupList.map(grp=>{
-                      const unlocked=grp.minTier<=currentTier
-                      const isCurrent=grp.id===activeTierGroup
-                      const isOpen=tierExpanded===grp.id||(isCurrent&&tierExpanded===null)
-                      return(
-                        <div key={grp.id} style={{marginBottom:3}} ref={el=>{tierRefs.current[grp.id]=el}}>
-                          <button onClick={()=>{const opening=!isOpen;setTierExpanded(opening?grp.id:-1);if(opening)setTimeout(()=>tierRefs.current[grp.id]?.scrollIntoView({behavior:'smooth',block:'nearest'}),80)}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',borderRadius:6,border:`1px solid ${isCurrent?'rgba(26,90,60,.2)':'rgba(0,0,0,.08)'}`,background:isCurrent?'rgba(26,90,60,.05)':unlocked?'#fff':'rgba(0,0,0,.02)',cursor:'pointer',textAlign:'left'}}>
-                            <div style={{fontFamily:'var(--m)',fontSize:11.5,color:unlocked?'#182e22':'#b0bab4',fontWeight:isCurrent?600:400}}>{unlocked?'':`🔒 `}Tier {grp.id} · {grp.name} <span style={{color:'#9aaa8a',fontWeight:400}}>#{grp.minTier}–{grp.maxTier}</span></div>
-                            <span style={{color:'#7aaa8a',fontSize:11,fontWeight:600}}>{isOpen?'–':'›'}</span>
-                          </button>
-                          {isOpen&&unlocked&&(
-                            <div style={{paddingLeft:4,paddingTop:2,display:'flex',flexDirection:'column',gap:0}}>
-                              {grp.species.map(s=>{
-                                const isCur=s.tier===currentTier
-                                const isUnlocked=s.tier<=currentTier
-                                return(
-                                  <div key={s.tier} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:4,background:isCur?'rgba(26,90,60,.07)':'transparent',opacity:isUnlocked?1:.35,borderBottom:'1px solid rgba(0,0,0,.04)'}}>
-                                    <span style={{fontSize:14,width:15,textAlign:'center'}}>{s.emoji}</span>
-                                    <span style={{fontFamily:'Figtree,sans-serif',fontSize:13.5,color:isCur?'#182e22':'#4a6a50',flex:1,fontWeight:isCur?500:400}}>{s.name}</span>
-                                    {isCur&&<span style={{fontSize:11,color:'#1a5a3c',fontWeight:600}}>►</span>}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {/* Manage tree */}
-                  <div style={{padding:'10px 14px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
-                    <button onClick={()=>{setReevalOpen(o=>!o);setReevalResult(null)}} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'none',border:'none',cursor:'pointer',padding:0}}>
-                      <span style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.12em',color:'#7aaa8a'}}>Manage tree</span>
-                      <span style={{color:'#7aaa8a',fontSize:11}}>{reevalOpen?'▾':'›'}</span>
-                    </button>
-                    {reevalOpen&&(
-                      <div style={{marginTop:8}}>
-                        <div style={{fontFamily:'var(--m)',fontSize:11,color:'#7aaa8a',marginBottom:5,lineHeight:1.5}}>Add career history, certifications, or projects the COO should know when ranking you.</div>
-                        <textarea value={reevalCtx} onChange={e=>setReevalCtx(e.target.value)} rows={4} placeholder="e.g. 10 years in ML engineering, shipped 3 production models, published 2 papers…" style={{width:'100%',background:'#fff',border:'1px solid rgba(0,0,0,.12)',borderRadius:6,color:'#182e22',fontSize:12,padding:'6px 8px',fontFamily:'Figtree,sans-serif',resize:'vertical',outline:'none',lineHeight:1.5,boxSizing:'border-box'}}/>
-                        <div style={{display:'flex',alignItems:'center',gap:8,marginTop:5}}>
-                          <label style={{display:'inline-flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:5,cursor:reevalAttachments.length>=3?'not-allowed':'pointer',border:'1px dashed rgba(122,170,138,.5)',fontSize:11.5,color:'#7aaa8a',fontFamily:'var(--m)',background:'rgba(45,122,82,.03)',opacity:reevalAttachments.length>=3?.4:1}}>
-                            📎 Attach
-                            <input type="file" multiple accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.webp,image/*" style={{display:'none'}} onChange={handleReevalFileSelect} disabled={reevalAttachments.length>=3}/>
-                          </label>
-                          <span style={{fontFamily:'var(--m)',fontSize:10.5,color:'#7aaa8a'}}>{reevalAttachments.length>0?`${reevalAttachments.length}/3 files`:'up to 3 · txt md pdf img'}</span>
-                        </div>
-                        {reevalAttachments.length>0&&(
-                          <div style={{marginTop:5,display:'flex',flexDirection:'column',gap:3}}>
-                            {reevalAttachments.map(a=>(
-                              <div key={a.id} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 7px',borderRadius:4,background:'#f8f7f4',border:'1px solid rgba(0,0,0,.08)'}}>
-                                <span style={{fontSize:12}}>{a.status==='extracting'?'⏳':a.status==='done'?'✓':'✗'}</span>
-                                <span style={{fontFamily:'var(--m)',fontSize:10.5,color:a.status==='error'?'#8a2828':'#3a5c47',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</span>
-                                <button onClick={()=>setReevalAttachments(prev=>prev.filter(x=>x.id!==a.id))} style={{background:'none',border:'none',cursor:'pointer',fontSize:11,color:'#7aaa8a',padding:'0 2px',lineHeight:1}}>✕</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {reevalResult&&!reevalResult.error&&!reevalResult.skipped&&(
-                          <div style={{padding:'7px 9px',background:'rgba(26,90,60,.06)',border:'1px solid rgba(26,90,60,.15)',borderRadius:6,fontFamily:'var(--m)',fontSize:11.5,color:'#3a5c47',lineHeight:1.5,marginTop:6}}>
-                            <strong style={{color:'#1a5a3c'}}>Tier {reevalResult.tier} — {reevalResult.catalog_row?.emoji} {reevalResult.catalog_row?.name}</strong><br/>{reevalResult.reason}
-                          </div>
-                        )}
-                        {reevalResult?.error&&<div style={{fontFamily:'var(--m)',fontSize:11,color:'#8a2828',marginTop:5}}>{reevalResult.error}</div>}
-                        <div style={{display:'flex',gap:6,marginTop:7}}>
-                          <button onClick={runReeval} disabled={reevalLoading} style={{flex:1,padding:'5px 0',borderRadius:6,border:'1px solid rgba(26,90,60,.25)',background:'rgba(26,90,60,.08)',color:'#1a5a3c',fontFamily:'var(--m)',fontSize:11.5,fontWeight:500,cursor:'pointer',opacity:reevalLoading?.6:1}}>{reevalLoading?'Evaluating…':'Re-evaluate tier'}</button>
-                          <button onClick={()=>{setReevalOpen(false);setReevalCtx('');setReevalResult(null);setReevalAttachments([])}} style={{padding:'5px 10px',borderRadius:6,border:'1px solid rgba(0,0,0,.1)',background:'none',color:'#7aaa8a',fontFamily:'var(--m)',fontSize:11.5,cursor:'pointer'}}>Cancel</button>
-                        </div>
-                        <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid rgba(0,0,0,.07)'}}>
-                          <div style={{fontFamily:'var(--m)',fontSize:10.5,color:'#7aaa8a',marginBottom:5}}>Rebuild tree from career outline</div>
-                          <button onClick={runSeed} disabled={seedLoading} style={{width:'100%',padding:'5px 0',borderRadius:6,border:'1px solid rgba(0,0,0,.08)',background:'#fff',color:'#3a5c47',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',opacity:seedLoading?.6:1}}>{seedLoading?'Re-seeding…':'↺ Re-seed branches, roots & relationships'}</button>
-                          {seedResult&&<div style={{marginTop:5,fontFamily:'var(--m)',fontSize:10,color:seedResult.ok?'#3a7d44':'#b94a3a',lineHeight:1.4}}>{seedResult.msg}</div>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Granularity footer */}
-                  <div style={{padding:'10px 14px 10px',background:'rgba(245,244,240,.98)',borderTop:'1px solid rgba(0,0,0,.07)'}}>
-                    <div style={{display:'flex',gap:5}}>
-                      {['year','month','week'].map(g=>(
-                        <button key={g} onClick={()=>setTreeGran(g)} style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${treeGran===g?'rgba(26,90,60,.25)':'rgba(0,0,0,.1)'}`,background:treeGran===g?'rgba(26,90,60,.07)':'#fff',fontFamily:'var(--m)',fontSize:11.5,color:treeGran===g?'#1a5a3c':'#7aaa8a',cursor:'pointer',textTransform:'capitalize',fontWeight:treeGran===g?600:400}}>{g}</button>
-                      ))}
-                    </div>
-                    <div style={{fontFamily:'Instrument Serif,Georgia,serif',fontSize:11,fontStyle:'italic',color:'#9aaa8a',marginTop:7,textAlign:'center'}}>🌱 roots & legacy below ground</div>
-                  </div>
+            {/* Desktop side panel */}
+            {treeData&&<div className="tree-side-desktop"><TreeSidePanel treeData={treeData} gran={treeGran} onGranChange={setTreeGran} onRunReeval={async(ctx,atts)=>{setReevalLoading(true);setReevalResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();setReevalResult(j);if(j.tier&&!j.skipped)loadTree();return j}catch(e){return{error:e.message}}finally{setReevalLoading(false)}}} onRunSeed={async(ctx,atts)=>{setSeedLoading(true);setSeedResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree();const s=json.seeded;setSeedResult({ok:true,msg:`Seeded ${s.branches}b·${s.rings}r·${s.roots}rt·${s.relationships}rel`});return{ok:true}}else{const r={ok:false,msg:json.error||'Unknown error'};setSeedResult(r);return r}}catch(e){const r={ok:false,msg:'Network error'};setSeedResult(r);return r}finally{setSeedLoading(false)}}}/></div>}
+            {/* Mobile bottom sheet */}
+            {treePanelOpen&&<div style={{position:'absolute',inset:0,zIndex:50,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setTreePanelOpen(false)}>
+              <div style={{background:'rgba(250,249,246,.98)',borderRadius:'16px 16px 0 0',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 -8px 32px rgba(0,0,0,.18)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px 8px',borderBottom:'1px solid rgba(0,0,0,.07)'}}>
+                  <span style={{fontFamily:'var(--m)',fontSize:12,color:'#7aaa8a',textTransform:'uppercase',letterSpacing:'.1em'}}>Tree stats</span>
+                  <button onClick={()=>setTreePanelOpen(false)} style={{background:'none',border:'none',fontSize:18,color:'#7aaa8a',cursor:'pointer',lineHeight:1}}>×</button>
                 </div>
-              )
-            })()}
+                {treeData&&<TreeSidePanel treeData={treeData} gran={treeGran} onGranChange={g=>{setTreeGran(g);setTreePanelOpen(false)}} onRunReeval={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();if(j.tier&&!j.skipped)loadTree();return j}} onRunSeed={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree()}return json}}/>}
+              </div>
+            </div>}
           </div>
           :<><div className="scroll">
+
+          {/* JOBS VIEW */}
+          {view==='jobs'&&(()=>{
+            const leads=jobData?.leads||[]
+            const today=todayStr()
+            const todayLeads=leads.filter(l=>!l.date||l.date===today||l.status==='new')
+            const applied=leads.filter(l=>l.status==='applied')
+            const rejected=leads.filter(l=>l.status==='rejected')
+            const backlog=leads.filter(l=>l.date&&l.date<today&&l.status!=='applied'&&l.status!=='rejected')
+            async function applyToLead(i,lead){
+              if(lead.url)window.open(lead.url,'_blank')
+              // Create task
+              api.tasks.create({name:`Applied to ${lead.role} at ${lead.company}`,cat:'interview',q:'do',blocks:1,source:'coo',done:false}).catch(()=>{})
+              // Update status
+              const newLeads=leads.map((l,idx)=>idx===i?{...l,status:'applied'}:l)
+              setJobData(d=>({...d,leads:newLeads}))
+              api.jobs.patch({leadIndex:i,status:'applied',date:jobData?.date}).catch(()=>{})
+            }
+            async function skipLead(i){
+              const newLeads=leads.map((l,idx)=>idx===i?{...l,status:'rejected'}:l)
+              setJobData(d=>({...d,leads:newLeads}))
+              api.jobs.patch({leadIndex:i,status:'rejected',date:jobData?.date}).catch(()=>{})
+            }
+            return(<>
+              {jobData?.summary&&<div className="card"><div style={{padding:'10px 13px',fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.6}}>{jobData.summary}</div></div>}
+              {/* Stats row */}
+              <div style={{display:'flex',gap:8,padding:'0 1px',flexWrap:'wrap'}}>
+                {[
+                  {v:todayLeads.length,l:"Today's leads",c:'var(--sch)'},
+                  {v:applied.length,l:'Applied',c:'var(--ok)'},
+                  {v:rejected.length,l:'Skipped',c:'var(--txt3)'},
+                  {v:jobData?.backlog_count||0,l:'30d backlog',c:'var(--txt3)'},
+                ].map(({v,l,c})=>(
+                  <div key={l} style={{padding:'6px 12px',borderRadius:'var(--r)',background:'var(--glass2)',border:'1px solid var(--gb2)'}}>
+                    <div style={{fontFamily:'var(--m)',fontSize:17,fontWeight:600,color:c}}>{v}</div>
+                    <div style={{fontFamily:'var(--m)',fontSize:9,color:'var(--txt3)',textTransform:'uppercase',letterSpacing:'.08em',marginTop:2}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              {jobLoading&&<div className="card"><div style={{padding:'14px 13px',fontFamily:'var(--m)',fontSize:13,color:'var(--txt3)'}}>Loading job leads…</div></div>}
+              {!jobLoading&&!jobData&&<div className="card"><div style={{padding:'14px 13px'}}>
+                <p style={{fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',marginBottom:12}}>No job digest yet. Click Refresh to scan your Gmail for job leads from the past 30 days.</p>
+                <button className="btn-primary" onClick={()=>loadJobs(true)}>Scan Gmail for leads →</button>
+              </div></div>}
+              {/* Today's leads */}
+              {todayLeads.length>0&&<div className="card">
+                <div className="card-hdr"><span className="card-title">📬 Today's leads</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{todayLeads.length} new</span></div>
+                {todayLeads.map((lead,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'9px 13px',borderTop:'1px solid rgba(0,0,0,.05)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:'var(--f)',fontSize:14,color:'var(--txt)',fontWeight:500,marginBottom:1}}>{lead.role}</div>
+                      <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginBottom:lead.notes?3:0}}>{lead.company} · {lead.source||'email'}{lead.date&&lead.date!==today?` · ${lead.date}`:''}
+                        <span style={{marginLeft:6,padding:'1px 5px',borderRadius:3,background:'var(--sch-bg)',color:'var(--sch)',fontSize:9}}>priority {lead.priority||'—'}</span>
+                      </div>
+                      {lead.notes&&<div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',lineHeight:1.4,marginTop:1}}>{lead.notes}</div>}
+                    </div>
+                    <div style={{display:'flex',gap:5,flexShrink:0}}>
+                      <button onClick={()=>applyToLead(leads.indexOf(lead),lead)} style={{fontFamily:'var(--m)',fontSize:11,padding:'4px 9px',borderRadius:5,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.08)',color:'var(--ok)',cursor:'pointer'}}>Apply →</button>
+                      <button onClick={()=>skipLead(leads.indexOf(lead))} style={{fontFamily:'var(--m)',fontSize:11,padding:'4px 8px',borderRadius:5,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',cursor:'pointer'}}>✗</button>
+                    </div>
+                  </div>
+                ))}
+              </div>}
+              {/* Applied */}
+              {applied.length>0&&<div className="card">
+                <div className="card-hdr"><span className="card-title">✅ Applied ({applied.length})</span></div>
+                {applied.map((lead,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 13px',borderTop:'1px solid rgba(0,0,0,.05)'}}>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:'var(--txt)'}}>{lead.role}</div><div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{lead.company}</div></div>
+                    <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--ok)'}}>applied</span>
+                  </div>
+                ))}
+              </div>}
+              {/* Backlog */}
+              {backlog.length>0&&<div className="card">
+                <div className="card-hdr"><span className="card-title">📂 Backlog ({backlog.length})</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>older leads</span></div>
+                {backlog.slice(0,10).map((lead,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'7px 13px',borderTop:'1px solid rgba(0,0,0,.05)'}}>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:'var(--txt)'}}>{lead.role}</div><div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{lead.company} · {lead.date}</div></div>
+                    <button onClick={()=>applyToLead(leads.indexOf(lead),lead)} style={{fontFamily:'var(--m)',fontSize:11,padding:'3px 7px',borderRadius:4,border:'1px solid rgba(15,110,86,.25)',background:'transparent',color:'var(--ok)',cursor:'pointer',flexShrink:0}}>Apply →</button>
+                  </div>
+                ))}
+              </div>}
+            </>)
+          })()}
+
           {/* DONE LIST */}
           {view==='done'&&(()=>{
             const COO_SOURCES=['coo','coo_proposal']
@@ -1454,8 +1420,40 @@ export default function App(){
               </div>
               <button onClick={()=>setHelpDismissed(h=>({...h,home:true}))} style={{background:'none',border:'none',color:'var(--txt3)',cursor:'pointer',fontSize:18,padding:0,flexShrink:0}}>×</button>
             </div>}
-            {/* Sunday weekly brief */}
-            {isSunday&&weeklyBrief&&(
+            {/* Sunday weekly digest */}
+            {isSunday&&weeklyDigest&&!weeklyDigest.final_message&&(
+              <div style={{background:'var(--glass2)',backdropFilter:'blur(14px)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)',overflow:'hidden'}}>
+                <div style={{padding:'10px 14px 8px',borderBottom:'1px solid var(--gb2)'}}>
+                  <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--acc2)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>📊 Weekly Review</div>
+                  <div style={{fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.7}}>{weeklyDigest.digest?.message||weeklyDigest.digest?.headline}</div>
+                  {weeklyDigest.digest?.wins?.length>0&&<div style={{marginTop:6}}>{weeklyDigest.digest.wins.slice(0,2).map((w,i)=><div key={i} style={{fontFamily:'var(--m)',fontSize:12,color:'var(--ok)',marginBottom:1}}>• {w}</div>)}</div>}
+                </div>
+                <div style={{padding:'10px 14px'}}>
+                  <div style={{fontFamily:'var(--m)',fontSize:11.5,color:'var(--txt2)',marginBottom:6}}>What worked? What's one thing to change next week?</div>
+                  <textarea value={weeklyFeedbackMsg} onChange={e=>setWeeklyFeedbackMsg(e.target.value)} rows={2} placeholder="A few words is fine…" className="fm-in" style={{width:'100%',resize:'none',marginBottom:8}}/>
+                  <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+                    <button className="mb-cancel" onClick={()=>setWeeklyDigest(null)}>Later</button>
+                    <button className="mb-save" disabled={weeklyFeedbackLoading||!weeklyFeedbackMsg.trim()} onClick={async()=>{
+                      setWeeklyFeedbackLoading(true)
+                      try{
+                        const r=await fetch('/api/coo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'weekly_feedback',digestId:weeklyDigest.id,feedback:weeklyFeedbackMsg})})
+                        const j=await r.json()
+                        if(j.result?.message)setWeeklyDigest(d=>({...d,final_message:j.result.message}))
+                      }catch{}
+                      setWeeklyFeedbackLoading(false)
+                    }}>{weeklyFeedbackLoading?'…':'Send →'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {isSunday&&weeklyDigest?.final_message&&(
+              <div style={{padding:'10px 14px',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)',fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.7}}>
+                <div style={{color:'var(--acc2)',fontWeight:500,marginBottom:4}}>📊 Weekly Plan set</div>
+                <div>{weeklyDigest.final_message}</div>
+              </div>
+            )}
+            {/* Fallback: old-style weekly brief (when no digest from cron yet) */}
+            {isSunday&&weeklyBrief&&!weeklyDigest&&(
               <div style={{padding:'10px 14px',background:'var(--glass2)',backdropFilter:'blur(14px)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)',fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.7}}>
                 <div style={{color:'var(--acc2)',fontWeight:500,marginBottom:4}}>📊 Weekly review</div>
                 <div>{weeklyBrief.message||weeklyBrief.headline}</div>
@@ -2190,7 +2188,7 @@ export default function App(){
       {/* MOBILE BOTTOM NAV */}
       <div style={{display:'none',position:'fixed',bottom:0,left:0,right:0,background:'var(--glass)',backdropFilter:'blur(22px)',WebkitBackdropFilter:'blur(22px)',borderTop:'1px solid var(--gb)',padding:'8px 0 env(safe-area-inset-bottom,10px)',zIndex:200,flexDirection:'row'}} id="mob-nav">
         {navItems.map(({icon,label,id,badge,bc})=>(
-          <button key={id} onClick={()=>{setView(id);if(id==='schedule'&&!schedule)generateSchedule();if(id==='tree'&&!treeData)loadTree()}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1,cursor:'pointer',border:'none',background:'transparent',color:view===id?'var(--acc2)':'var(--txt3)',fontSize:9.5,fontFamily:'var(--m)',padding:'3px 0',position:'relative',minWidth:0}}>
+          <button key={id} onClick={()=>{setView(id);if(id==='schedule'&&!schedule)generateSchedule();if(id==='tree'&&!treeData)loadTree();if(id==='jobs'&&!jobData)loadJobs()}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1,cursor:'pointer',border:'none',background:'transparent',color:view===id?'var(--acc2)':'var(--txt3)',fontSize:9.5,fontFamily:'var(--m)',padding:'3px 0',position:'relative',minWidth:0}}>
             <span style={{fontSize:17,lineHeight:1}}>{icon}</span>
             <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'100%',letterSpacing:'-.01em'}}>{label}</span>
             {badge>0&&<span style={{position:'absolute',top:1,right:'12%',width:7,height:7,borderRadius:'50%',background:bc}}/>}
@@ -2364,7 +2362,8 @@ export default function App(){
       @keyframes spin{to{transform:rotate(360deg)}}
       @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
       @keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-      @media(max-width:680px){nav{display:none!important}#mob-nav{display:flex!important}.scroll{padding:11px 11px calc(72px + env(safe-area-inset-bottom, 12px))!important}}
+      @media(max-width:680px){nav{display:none!important}#mob-nav{display:flex!important}.scroll{padding:11px 11px calc(72px + env(safe-area-inset-bottom, 12px))!important}.tree-side-desktop{display:none!important}.tree-stats-btn{display:flex!important}}
+      @media(min-width:681px){.tree-side-desktop{display:flex!important}.tree-stats-btn{display:none!important}}
     `}</style>
     </>
   )

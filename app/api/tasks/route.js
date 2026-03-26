@@ -227,6 +227,7 @@ async function awardXP(userId, blocks) {
     current_streak: streak,
     longest_streak: Math.max(sp.longest_streak || 0, streak),
     last_activity_date: today,
+    last_xp_event: { h_gained: hGained, w_gained: wGained, date: today },
   }).eq('user_id', userId)
 
   return { h_gained: hGained, w_gained: wGained, streak, multiplier, tier_up: tierUp }
