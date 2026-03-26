@@ -46,6 +46,7 @@ export async function POST(req) {
   // Use client-supplied local hour/date to avoid UTC server clock mismatches
   const currentHour = typeof body.localHour === 'number' ? body.localHour : new Date().getHours()
   const localToday = body.localDate || todayKey()
+  const localTomorrow = body.localTomorrow || tomorrowKey()
   const planForTomorrow = currentHour >= 14
 
   // For tomorrow plans: fetch all open (not wont_do, not done) tasks regardless of date
@@ -122,7 +123,6 @@ export async function POST(req) {
   if (!plan) return Response.json({ error: 'COO failed to generate plan' }, { status: 500 })
 
   // Prefer COO-set plan_date, then client-derived local dates, then server UTC fallback
-  const localTomorrow = body.localTomorrow || tomorrowKey()
   const planDate = plan.plan_date || (planForTomorrow ? localTomorrow : localToday)
   const slots = plan.slots.map(s => ({
     ...s,
@@ -188,10 +188,10 @@ export async function PATCH(req) {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { action, slotIndex, reason, pushback_date, label, time, note, duration_blocks } = await req.json()
+  const { action, slotIndex, reason, pushback_date, label, time, note, duration_blocks, localDate: clientDate } = await req.json()
   const userId = session.user.email
 
-  const schedDate = activeScheduleDate()
+  const schedDate = clientDate || activeScheduleDate()
   const { data: existing } = await supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', schedDate).single()
   if (!existing) return Response.json({ error: 'No schedule' }, { status: 404 })
 

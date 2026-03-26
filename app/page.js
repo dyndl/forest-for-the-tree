@@ -608,17 +608,17 @@ export default function App(){
     const idx=vetoPanel.idx;setVetoPanel(null)
     setCooState('thinking');setCooLabel('Assessing impact…')
     const pushDate=vetoPushback?horizonDate(vetoPushback):undefined
-    try{const{slots}=await api.schedule.patch('veto',idx,{reason:vetoReason||undefined,pushback_date:pushDate});if(slots){setSchedule(s=>({...s,slots}));if(pushDate)setTasks(ts=>ts.map(t=>t.id===slots[idx]?.taskId?{...t,date:pushDate}:t))}}catch{}
+    try{const{slots}=await api.schedule.patch('veto',idx,{reason:vetoReason||undefined,pushback_date:pushDate,localDate:schedule?.date});if(slots){setSchedule(s=>({...s,slots}));if(pushDate)setTasks(ts=>ts.map(t=>t.id===slots[idx]?.taskId?{...t,date:pushDate}:t))}}catch{}
     setCooState('ok');setCooLabel('Impact assessed')
     setVetoReason('');setVetoPushback('')
   }
   async function submitSlotEdit(){
     if(!editingSlot)return
     const{idx,label,time,note,blocks}=editingSlot;setEditingSlot(null)
-    try{const{slots}=await api.schedule.patch('edit',idx,{label,time,note,duration_blocks:blocks});if(slots)setSchedule(s=>({...s,slots}))}catch{}
+    try{const{slots}=await api.schedule.patch('edit',idx,{label,time,note,duration_blocks:blocks,localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{}
   }
-  async function acceptSlot(idx){try{const{slots}=await api.schedule.patch('accept',idx);if(slots)setSchedule(s=>({...s,slots}))}catch{}}
-  async function acceptAll(){try{const{slots}=await api.schedule.patch('accept_all',0);if(slots)setSchedule(s=>({...s,slots}))}catch{};setCooState('ok');setCooLabel('All accepted')}
+  async function acceptSlot(idx){try{const{slots}=await api.schedule.patch('accept',idx,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{}}
+  async function acceptAll(){try{const{slots}=await api.schedule.patch('accept_all',0,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{};setCooState('ok');setCooLabel('All accepted')}
 
   async function loadJobs(refresh=false){
     setJobLoading(true)

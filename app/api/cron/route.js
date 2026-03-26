@@ -19,6 +19,21 @@ function localHourForUser(userCtx) {
   }
 }
 
+function localDateForUser(userCtx) {
+  const tz = userCtx?.timezone || 'UTC'
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
+}
+
+function localTomorrowForUser(userCtx) {
+  const today = localDateForUser(userCtx)
+  const [y, m, d] = today.split('-').map(Number)
+  return new Date(y, m - 1, d + 1).toLocaleDateString('en-CA')
+}
+
 export async function GET(req) {
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -70,7 +85,10 @@ async function runMorning(userId) {
   const localHour = localHourForUser(userCtx)
   if (localHour < 5 || localHour > 10) return { skipped: true, reason: `outside morning window (local hour: ${localHour})` }
 
-  const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey())).data || []
+  const localDate = localDateForUser(userCtx)
+  const localTomorrow = localTomorrowForUser(userCtx)
+
+  const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', localDate)).data || []
 
   let calendarEvents = [], emails = [], ouraData = null
   const { flags } = await getTokenAndContext(userId).catch(() => ({ flags: getFeatureFlags() }))
@@ -110,13 +128,16 @@ async function runMorning(userId) {
     roadmap: userCtx?.roadmap,
     ouraData,
     userContext: userCtx,
+    currentHour: localHour,
+    localDate,
+    localTomorrow,
   })
 
   if (!plan) return { ok: false, error: 'Plan generation failed' }
 
   const slots = plan.slots.map(s => ({ ...s, taskId: s.task_id || null, state: 'pending' }))
   const record = {
-    user_id: userId, date: todayKey(), stale: false,
+    user_id: userId, date: localDate, stale: false,
     coo_message: plan.coo_message, energy_read: plan.energy_read,
     top_3_mits: plan.top_3_mits, eliminated: plan.eliminated,
     slots, calendar_events: calendarEvents, email_summary: emails.slice(0, 5),

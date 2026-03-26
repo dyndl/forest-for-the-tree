@@ -72,7 +72,7 @@ export default function SettingsPanel() {
   const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(d => setSettings(d.settings))
+    fetch('/api/settings').then(r => r.json()).then(d => setSettings(d.settings || {})).catch(() => setSettings({}))
     fetch('/api/oura').then(r => r.json()).then(d => setOura(d))
     fetch('/api/integrations').then(r => r.json()).then(d => setIntegrations(d))
     // Show link success/error from OAuth callback
