@@ -217,7 +217,40 @@ function ManageTree({ onRunReeval, onRunSeed }) {
   )
 }
 
-export default function TreeSidePanel({ treeData, gran, onGranChange, onRunReeval, onRunSeed }) {
+function Chronicle({ journals }) {
+  const [expanded, setExpanded] = useState(null)
+  if (!journals?.length) return null
+  return (
+    <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', padding: '12px 14px 14px' }}>
+      <div style={{ fontFamily: 'var(--m)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.12em', color: '#7aaa8a', marginBottom: 10 }}>Chronicle</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {journals.map((j, i) => {
+          const isOpen = expanded === i
+          const preview = j.journal?.slice(0, 140) + (j.journal?.length > 140 ? '…' : '')
+          return (
+            <div key={j.id || i} style={{ background: 'rgba(26,90,60,.04)', border: '1px solid rgba(26,90,60,.12)', borderRadius: 8, padding: '9px 11px', cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : i)}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 15 }}>{j.emoji || '🌿'}</span>
+                  <span style={{ fontFamily: 'var(--m)', fontSize: 11, fontWeight: 600, color: '#1a5a3c' }}>{j.species}</span>
+                </div>
+                <span style={{ fontFamily: 'var(--m)', fontSize: 10, color: '#9aaa8a' }}>Tier {j.from_tier}→{j.to_tier}</span>
+              </div>
+              <div style={{ fontFamily: 'Instrument Serif,Georgia,serif', fontSize: 12.5, color: '#3a5c47', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                {isOpen ? j.journal : preview}
+              </div>
+              {j.journal?.length > 140 && (
+                <div style={{ fontFamily: 'var(--m)', fontSize: 10, color: '#7aaa8a', marginTop: 5 }}>{isOpen ? '▴ collapse' : '▾ read full entry'}</div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export default function TreeSidePanel({ treeData, gran, onGranChange, onRunReeval, onRunSeed, journals }) {
   const sp = treeData?.species
   const cat = treeData?.current_catalog_row
   const next = treeData?.next_milestone
@@ -292,6 +325,9 @@ export default function TreeSidePanel({ treeData, gran, onGranChange, onRunReeva
 
       {/* Tier ladder with per-species XP bars */}
       <TierLadder treeData={treeData} />
+
+      {/* Chronicle — tier journals */}
+      <Chronicle journals={journals} />
 
       {/* Manage tree */}
       <ManageTree onRunReeval={onRunReeval} onRunSeed={onRunSeed} />

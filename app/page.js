@@ -48,6 +48,10 @@ const api={
   },
   oura:{get:()=>fetch('/api/oura').then(r=>r.json()).catch(()=>({connected:false}))},
   tree:{get:()=>fetch('/api/tree',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))},
+  journal:{
+    list:()=>fetch('/api/tree/journal').then(r=>r.json()).catch(()=>({journals:[]})),
+    generate:(from_tier,to_tier,species,emoji)=>fetch('/api/tree/journal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from_tier,to_tier,species,emoji})}).then(r=>r.json()),
+  },
   goals:{
     get:()=>fetch('/api/goals').then(r=>r.json()).catch(()=>({goals:[]})),
     create:(body)=>fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()),
@@ -439,6 +443,8 @@ export default function App(){
   const[logCat,setLogCat]=useState('admin')
   const[logSubmitting,setLogSubmitting]=useState(false)
   const[logXp,setLogXp]=useState(null)
+  const[tierUpModal,setTierUpModal]=useState(null) // {from_tier,to_tier,species,emoji,journal,loading}
+  const[tierJournals,setTierJournals]=useState([])
   const[doneChat,setDoneChat]=useState('')
   const[doneChatLoading,setDoneChatLoading]=useState(false)
   const[doneChatParsed,setDoneChatParsed]=useState(null) // parsed items awaiting confirm
@@ -572,10 +578,23 @@ export default function App(){
     }catch(e){console.error(e)}
   }
 
+  function handleXpEvent(xp){
+    if(!xp)return
+    setLogXp(xp)
+    timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))
+    if(xp.tier_up){
+      const{from,to,species,emoji}=xp.tier_up
+      setTierUpModal({from_tier:from,to_tier:to,species,emoji,journal:null,loading:true})
+      api.journal.generate(from,to,species,emoji)
+        .then(r=>setTierUpModal(m=>m?{...m,journal:r.journal?.journal||null,loading:false}:null))
+        .catch(()=>setTierUpModal(m=>m?{...m,loading:false}:null))
+    }
+  }
+
   async function toggleTask(id){
     const t=tasks.find(x=>x.id===id);if(!t)return
     setTasks(ts=>ts.map(x=>x.id===id?{...x,done:!x.done}:x)) // optimistic
-    try{const{task}=await api.tasks.update(id,{done:!t.done});if(task)setTasks(ts=>ts.map(x=>x.id===id?task:x))}
+    try{const{task,xp}=await api.tasks.update(id,{done:!t.done});if(task)setTasks(ts=>ts.map(x=>x.id===id?task:x));handleXpEvent(xp)}
     catch{setTasks(ts=>ts.map(x=>x.id===id?{...x,done:t.done}:x))} // rollback
   }
 
@@ -605,20 +624,31 @@ export default function App(){
   function openVetoPanel(idx){setVetoPanel({idx});setVetoReason('');setVetoPushback('')}
   async function submitVeto(){
     if(!vetoPanel)return
-    const idx=vetoPanel.idx;setVetoPanel(null)
-    setCooState('thinking');setCooLabel('Assessing impact…')
-    const pushDate=vetoPushback?horizonDate(vetoPushback):undefined
-    try{const{slots}=await api.schedule.patch('veto',idx,{reason:vetoReason||undefined,pushback_date:pushDate,localDate:schedule?.date});if(slots){setSchedule(s=>({...s,slots}));if(pushDate)setTasks(ts=>ts.map(t=>t.id===slots[idx]?.taskId?{...t,date:pushDate}:t))}}catch{}
-    setCooState('ok');setCooLabel('Impact assessed')
-    setVetoReason('');setVetoPushback('')
+    const idx=vetoPanel.idx,reason=vetoReason,pushDate=vetoPushback?horizonDate(vetoPushback):undefined
+    setVetoPanel(null);setVetoReason('');setVetoPushback('')
+    // Optimistic: mark vetoed immediately so buttons disappear and veto reason shows at once
+    const prev=schedule
+    setSchedule(s=>{const slots=[...s.slots];slots[idx]={...slots[idx],state:'vetoed',veto_reason:reason||undefined};return{...s,slots}})
+    setCooState('thinking');setCooLabel('COO thinking…')
+    try{const{slots}=await api.schedule.patch('veto',idx,{reason:reason||undefined,pushback_date:pushDate,localDate:schedule?.date});if(slots){setSchedule(s=>({...s,slots}));if(pushDate)setTasks(ts=>ts.map(t=>t.id===slots[idx]?.taskId?{...t,date:pushDate}:t))}}catch{setSchedule(prev)}
+    setCooState('ok');setCooLabel('Done')
   }
   async function submitSlotEdit(){
     if(!editingSlot)return
     const{idx,label,time,note,blocks}=editingSlot;setEditingSlot(null)
     try{const{slots}=await api.schedule.patch('edit',idx,{label,time,note,duration_blocks:blocks,localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{}
   }
-  async function acceptSlot(idx){try{const{slots}=await api.schedule.patch('accept',idx,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{}}
-  async function acceptAll(){try{const{slots}=await api.schedule.patch('accept_all',0,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{};setCooState('ok');setCooLabel('All accepted')}
+  async function acceptSlot(idx){
+    const prev=schedule
+    setSchedule(s=>{const slots=[...s.slots];slots[idx]={...slots[idx],state:'accepted'};return{...s,slots}})
+    try{const{slots}=await api.schedule.patch('accept',idx,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{setSchedule(prev)}
+  }
+  async function acceptAll(){
+    const prev=schedule
+    setSchedule(s=>({...s,slots:s.slots.map(sl=>sl.taskId&&(sl.state==='pending'||sl.state==='optional')?{...sl,state:'accepted'}:sl)}))
+    setCooState('ok');setCooLabel('All accepted')
+    try{const{slots}=await api.schedule.patch('accept_all',0,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{setSchedule(prev)}
+  }
 
   async function loadJobs(refresh=false){
     setJobLoading(true)
@@ -632,8 +662,9 @@ export default function App(){
   async function loadTree(){
     setTreeLoading(true)
     try{
-      const j=await api.tree.get()
+      const [j, jr] = await Promise.all([api.tree.get(), api.journal.list()])
       setTreeData(j||null)
+      if(jr?.journals)setTierJournals(jr.journals)
       // Auto-fetch Wikipedia photo for current species if not cached yet
       const row=j?.current_catalog_row
       if(row?.slug&&row?.name&&!row.image_url){
@@ -786,9 +817,8 @@ export default function App(){
       const r=await api.tasks.create({name:logName.trim(),blocks:logBlocks,q:'do',cat:logCat,source:'manual_log',done:true})
       if(r.task){
         setTasks(ts=>[...ts,r.task])
-        if(r.xp)setLogXp(r.xp)
+        handleXpEvent(r.xp)
         setLogName('');setLogBlocks(1)
-        timerRefs.current.push(setTimeout(()=>setLogXp(null),4000))
       }
     }catch{}
     setLogSubmitting(false)
@@ -1124,7 +1154,7 @@ export default function App(){
               <button onClick={()=>setTreePanelOpen(true)} style={{display:'none',position:'absolute',bottom:52,right:12,zIndex:20,padding:'7px 14px',borderRadius:20,background:'rgba(26,90,60,.88)',backdropFilter:'blur(8px)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontFamily:'var(--m)',fontSize:12,cursor:'pointer'}} className="tree-stats-btn">⚙ Stats</button>
             </div>
             {/* Desktop side panel */}
-            {treeData&&<div className="tree-side-desktop"><TreeSidePanel treeData={treeData} gran={treeGran} onGranChange={setTreeGran} onRunReeval={async(ctx,atts)=>{setReevalLoading(true);setReevalResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();setReevalResult(j);if(j.tier&&!j.skipped)loadTree();return j}catch(e){return{error:e.message}}finally{setReevalLoading(false)}}} onRunSeed={async(ctx,atts)=>{setSeedLoading(true);setSeedResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree();const s=json.seeded;setSeedResult({ok:true,msg:`Seeded ${s.branches}b·${s.rings}r·${s.roots}rt·${s.relationships}rel`});return{ok:true}}else{const r={ok:false,msg:json.error||'Unknown error'};setSeedResult(r);return r}}catch(e){const r={ok:false,msg:'Network error'};setSeedResult(r);return r}finally{setSeedLoading(false)}}}/></div>}
+            {treeData&&<div className="tree-side-desktop"><TreeSidePanel journals={tierJournals} treeData={treeData} gran={treeGran} onGranChange={setTreeGran} onRunReeval={async(ctx,atts)=>{setReevalLoading(true);setReevalResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();setReevalResult(j);if(j.tier&&!j.skipped)loadTree();return j}catch(e){return{error:e.message}}finally{setReevalLoading(false)}}} onRunSeed={async(ctx,atts)=>{setSeedLoading(true);setSeedResult(null);try{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree();const s=json.seeded;setSeedResult({ok:true,msg:`Seeded ${s.branches}b·${s.rings}r·${s.roots}rt·${s.relationships}rel`});return{ok:true}}else{const r={ok:false,msg:json.error||'Unknown error'};setSeedResult(r);return r}}catch(e){const r={ok:false,msg:'Network error'};setSeedResult(r);return r}finally{setSeedLoading(false)}}}/></div>}
             {/* Mobile bottom sheet */}
             {treePanelOpen&&<div style={{position:'absolute',inset:0,zIndex:50,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setTreePanelOpen(false)}>
               <div style={{background:'rgba(250,249,246,.98)',borderRadius:'16px 16px 0 0',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 -8px 32px rgba(0,0,0,.18)'}}>
@@ -1132,7 +1162,7 @@ export default function App(){
                   <span style={{fontFamily:'var(--m)',fontSize:12,color:'#7aaa8a',textTransform:'uppercase',letterSpacing:'.1em'}}>Tree stats</span>
                   <button onClick={()=>setTreePanelOpen(false)} style={{background:'none',border:'none',fontSize:18,color:'#7aaa8a',cursor:'pointer',lineHeight:1}}>×</button>
                 </div>
-                {treeData&&<TreeSidePanel treeData={treeData} gran={treeGran} onGranChange={g=>{setTreeGran(g);setTreePanelOpen(false)}} onRunReeval={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();if(j.tier&&!j.skipped)loadTree();return j}} onRunSeed={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree()}return json}}/>}
+                {treeData&&<TreeSidePanel journals={tierJournals} treeData={treeData} gran={treeGran} onGranChange={g=>{setTreeGran(g);setTreePanelOpen(false)}} onRunReeval={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const full=ctx+(attachText?'\n\n'+attachText:'');const r=await fetch('/api/tree/tier-eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,additional_context:full})});const j=await r.json();if(j.tier&&!j.skipped)loadTree();return j}} onRunSeed={async(ctx,atts)=>{const attachText=atts.filter(a=>a.status==='done'&&a.text).map(a=>a.text).join('\n\n');const outline=ctx+(attachText?'\n\n'+attachText:'');const res=await fetch('/api/tree/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true,...(outline.trim()&&{outline})})});const json=await res.json();if(json.ok){if(outline.trim())fetch('/api/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline})}).catch(()=>{});await loadTree()}return json}}/>}
               </div>
             </div>}
           </div>
@@ -2356,6 +2386,26 @@ export default function App(){
       <span style={{color:'rgba(255,255,255,.8)',fontFamily:'var(--m)',fontSize:12}}>{undoInfo.label}</span>
       <button onClick={handleUndo} style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',color:'#fff',padding:'3px 11px',borderRadius:5,cursor:'pointer',fontFamily:'var(--m)',fontSize:12}}>↩ Undo</button>
       <button onClick={()=>setUndoInfo(null)} style={{background:'none',border:'none',color:'rgba(255,255,255,.5)',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>×</button>
+    </div>}
+
+    {/* TIER-UP JOURNAL MODAL */}
+    {tierUpModal&&<div style={{position:'fixed',inset:0,background:'rgba(10,28,18,.62)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(10px)',padding:16}} onClick={e=>e.target===e.currentTarget&&!tierUpModal.loading&&setTierUpModal(null)}>
+      <div style={{background:'rgba(255,255,255,.96)',backdropFilter:'blur(26px)',border:'1px solid rgba(255,255,255,.88)',borderRadius:22,width:'100%',maxWidth:420,padding:'26px 24px 22px',boxShadow:'0 24px 64px rgba(0,0,0,.28)',maxHeight:'85vh',overflowY:'auto'}}>
+        <div style={{textAlign:'center',marginBottom:18}}>
+          <div style={{fontSize:44,lineHeight:1,marginBottom:8,animation:tierUpModal.loading?'spin 2s linear infinite':undefined}}>{tierUpModal.emoji||'🌳'}</div>
+          <div style={{fontFamily:'var(--m)',fontSize:10,textTransform:'uppercase',letterSpacing:'.12em',color:'var(--txt3)',marginBottom:5}}>Tier {tierUpModal.from_tier} → {tierUpModal.to_tier}</div>
+          <div style={{fontFamily:'var(--s)',fontSize:22,fontStyle:'italic',color:'var(--txt)',lineHeight:1.2}}>{tierUpModal.species}</div>
+        </div>
+        {tierUpModal.loading
+          ?<div style={{textAlign:'center',padding:'16px 0 8px',fontFamily:'var(--m)',fontSize:13,color:'var(--txt3)'}}>Writing your chronicle…</div>
+          :tierUpModal.journal
+            ?<div style={{fontFamily:'var(--s)',fontSize:15.5,color:'var(--txt2)',lineHeight:1.75,whiteSpace:'pre-wrap',borderTop:'1px solid rgba(0,0,0,.07)',paddingTop:16}}>{tierUpModal.journal}</div>
+            :<div style={{textAlign:'center',padding:'16px 0 8px',fontFamily:'var(--m)',fontSize:13,color:'var(--txt3)'}}>Journal could not be generated. Keep growing!</div>
+        }
+        {!tierUpModal.loading&&<div style={{display:'flex',justifyContent:'center',marginTop:18}}>
+          <button onClick={()=>setTierUpModal(null)} style={{background:'var(--acc)',color:'#fff',border:'none',borderRadius:10,padding:'9px 28px',fontFamily:'var(--m)',fontSize:13,cursor:'pointer'}}>Continue growing →</button>
+        </div>}
+      </div>
     </div>}
 
     <style>{`

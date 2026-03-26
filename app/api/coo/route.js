@@ -103,6 +103,17 @@ export async function POST(req) {
       } catch {}
     }
     result = await generateChatResponse({ userMessage, tasks, schedule, userCtx, emails, calendarEvents })
+
+    // Persist chat exchange to chat_logs for tier journal generation
+    const cooMsg = result?.message || result?.headline || ''
+    if (userMessage && cooMsg) {
+      supabaseAdmin.from('tree_species').select('current_tier').eq('user_id', userId).maybeSingle()
+        .then(({ data: sp }) => supabaseAdmin.from('chat_logs').insert([
+          { user_id: userId, role: 'user', content: userMessage, tier_at: sp?.current_tier || 1 },
+          { user_id: userId, role: 'coo', content: cooMsg, tier_at: sp?.current_tier || 1 },
+        ]))
+        .catch(() => {})
+    }
   }
 
   return Response.json({ result })

@@ -30,11 +30,18 @@ export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const userId = session.user.email
-  // Try today first, then tomorrow (afternoon/evening use-case)
-  const { data: todayData } = await supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', todayKey()).single()
-  if (todayData) return Response.json({ schedule: todayData })
-  const { data: tomorrowData } = await supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', tomorrowKey()).single()
-  return Response.json({ schedule: tomorrowData || null })
+
+  const today = todayKey()
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const tomorrow = tomorrowKey()
+
+  // Query 3-day window: yesterday covers users whose local date lags UTC (US timezones at night)
+  const { data: rows } = await supabaseAdmin.from('schedules').select('*')
+    .eq('user_id', userId).in('date', [yesterday, today, tomorrow]).order('date', { ascending: false })
+
+  if (!rows?.length) return Response.json({ schedule: null })
+  // Prefer today (UTC) → tomorrow (afternoon planning) → yesterday (US user late at night)
+  return Response.json({ schedule: rows.find(r => r.date === today) || rows.find(r => r.date === tomorrow) || rows[rows.length - 1] || null })
 }
 
 export async function POST(req) {
@@ -209,13 +216,7 @@ export async function PATCH(req) {
       await supabaseAdmin.from('tasks').update({ date: pushback_date }).eq('id', slots[slotIndex].taskId).eq('user_id', userId)
       slots[slotIndex].pushed_to = pushback_date
     }
-    const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', schedDate)).data || []
-    const impact = await assessVetoImpact({ vetoedSlot: slots[slotIndex], remainingSlots: slots, tasks })
-    if (impact) {
-      slots[slotIndex].impact = impact.impact
-      slots[slotIndex].suggestion = impact.suggestion
-      slots[slotIndex].severity = impact.severity
-    }
+    // Impact assessment runs in background — response returns immediately
   } else if (action === 'edit') {
     if (label !== undefined) slots[slotIndex].label = label
     if (time !== undefined) slots[slotIndex].time = time
@@ -239,5 +240,19 @@ export async function PATCH(req) {
   const cooScore = total > 0 ? Math.round((acceptedFinal / total) * 100) : null
 
   await supabaseAdmin.from('schedules').update({ slots, coo_score: cooScore }).eq('user_id', userId).eq('date', schedDate)
+
+  // Background impact assessment for vetoes (non-blocking — client gets response first)
+  if (action === 'veto') {
+    const vi = slotIndex
+    supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', schedDate)
+      .then(r => assessVetoImpact({ vetoedSlot: slots[vi], remainingSlots: slots, tasks: r.data || [] }))
+      .then(impact => {
+        if (!impact) return
+        const updated = slots.map((s, i) => i === vi ? { ...s, impact: impact.impact, suggestion: impact.suggestion, severity: impact.severity } : s)
+        return supabaseAdmin.from('schedules').update({ slots: updated }).eq('user_id', userId).eq('date', schedDate)
+      })
+      .catch(() => {})
+  }
+
   return Response.json({ slots, coo_score: cooScore })
 }
