@@ -62,12 +62,16 @@ export async function POST(req) {
     : supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', localToday)
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const [tasks, userCtx, ouraConnector, recentScheds, agentRows] = await Promise.all([
+  const overdueQuery = supabaseAdmin.from('tasks').select('*')
+    .eq('user_id', userId).eq('done', false).neq('status', 'wont_do')
+    .lt('date', localToday).gte('date', sevenDaysAgo)
+  const [tasks, userCtx, ouraConnector, recentScheds, agentRows, overdueTasksData] = await Promise.all([
     tasksQuery.then(r => r.data || []),
     supabaseAdmin.from('user_context').select('*').eq('user_id', userId).single().then(r => r.data),
     supabaseAdmin.from('connectors').select('*').eq('user_id', userId).eq('provider', 'oura').eq('enabled', true).single().then(r => r.data),
     supabaseAdmin.from('schedules').select('date, slots').eq('user_id', userId).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(7).then(r => r.data || []),
     supabaseAdmin.from('agents').select('*').eq('user_id', userId).then(r => r.data || []),
+    overdueQuery.then(r => r.data || []),
   ])
   const vetoHistory = buildVetoHistory(recentScheds)
 
@@ -125,6 +129,7 @@ export async function POST(req) {
     localTomorrow,
     vetoHistory,
     agentContributions,
+    overdueTasks: overdueTasksData,
   })
 
   if (!plan) return Response.json({ error: 'COO failed to generate plan' }, { status: 500 })
@@ -188,7 +193,7 @@ export async function POST(req) {
     }
   }
 
-  return Response.json({ schedule: record, proposed_tasks: proposedTasks })
+  return Response.json({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
 }
 
 export async function PATCH(req) {

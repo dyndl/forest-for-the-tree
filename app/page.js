@@ -458,6 +458,7 @@ export default function App(){
   const[vetoPanel,setVetoPanel]=useState(null)
   const[vetoReason,setVetoReason]=useState('')
   const[vetoPushback,setVetoPushback]=useState('')
+  const[overdueProposals,setOverdueProposals]=useState([]) // [{task_id,new_date,reason}] from COO
   const[editingSlot,setEditingSlot]=useState(null)
   const[chatMsg,setChatMsg]=useState('')
   const[chatHistory,setChatHistory]=useState([])
@@ -536,7 +537,7 @@ export default function App(){
       setSettings(s ?? null)
       if (!s || !s.onboarding_complete) { router.push('/onboarding'); return }
       Promise.all([
-        api.tasks.list(todayStr(),addDays(35)).then(r=>r.tasks&&setTasks(r.tasks)),
+        Promise.all([api.tasks.list(todayStr(),addDays(35)),api.tasks.list(addDays(-14),addDays(-1))]).then(([fwd,past])=>{const overdue=(past.tasks||[]).filter(t=>!t.done&&t.status!=='wont_do');setTasks([...(fwd.tasks||[]),...overdue])}),
         api.schedule.get().then(r=>r.schedule&&setSchedule(r.schedule)),
         api.agents.list().then(r=>r.agents&&setAgents(r.agents)),
         api.oura.get().then(r=>setOura(r)),
@@ -605,7 +606,7 @@ export default function App(){
       // Pass local date/hour so the server doesn't use UTC and plan the wrong day
       const localDate=now.toLocaleDateString('en-CA') // YYYY-MM-DD in local TZ
       const localTomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toLocaleDateString('en-CA')
-      const{schedule:s,error,proposed_tasks}=await api.schedule.generate({roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow})
+      const{schedule:s,error,proposed_tasks,task_migrations}=await api.schedule.generate({roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow})
       if(error)throw new Error(error)
       if(s)setSchedule(s)
       // Merge proposed tasks into matrix (replace any previous coo-proposed for same date)
@@ -616,6 +617,8 @@ export default function App(){
           ...proposed_tasks,
         ])
       }
+      // Surface overdue migration proposals for user confirmation
+      if(task_migrations?.length)setOverdueProposals(task_migrations.filter(m=>m.new_date&&m.new_date!=='eliminate'))
       setCooState('ok');setCooLabel('Schedule ready')
     }catch(e){setSchedError(e.message||'Failed to generate schedule');setCooState('idle');setCooLabel('COO idle')}
     setSchedLoading(false)
@@ -1803,6 +1806,27 @@ export default function App(){
               {schedLoading&&<div className="card" style={{padding:'22px 16px',display:'flex',alignItems:'center',gap:10,color:'var(--txt3)',fontFamily:'var(--m)',fontSize:13}}><div style={{width:16,height:16,border:'2px solid rgba(122,170,138,0.3)',borderTopColor:'var(--acc)',borderRadius:'50%',animation:'spin .7s linear infinite',flexShrink:0}}/>COO reading Calendar{oura?.connected?' + Oura Ring':''} + Gmail and building your day…</div>}
               {schedError&&!schedLoading&&<div style={{padding:'10px 12px',background:'rgba(138,40,40,.06)',border:'1px solid rgba(138,40,40,.18)',borderRadius:'var(--r2)',display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:16}}>⚠</span><span style={{flex:1,fontSize:13.5,color:'#8a2828',fontFamily:'var(--m)'}}>{schedError}</span><button onClick={generateSchedule} style={{background:'transparent',border:'1px solid rgba(138,40,40,.3)',borderRadius:5,padding:'4px 10px',cursor:'pointer',fontSize:12.5,color:'#8a2828',fontFamily:'var(--m)'}}>Retry</button></div>}
               {!schedLoading&&!schedule&&!schedError&&<div className="card" style={{padding:'24px 16px',textAlign:'center'}}><div style={{fontFamily:'var(--s)',fontSize:20,fontStyle:'italic',color:'var(--txt2)',marginBottom:8}}>No schedule yet</div><p style={{fontSize:14,color:'var(--txt3)',marginBottom:16,lineHeight:1.6}}>COO will read your Calendar{oura?.connected?', Oura readiness,':''} and Gmail then build your day in 15-min blocks.</p><button className="btn-primary" onClick={generateSchedule}>Build my day →</button></div>}
+              {!schedLoading&&overdueProposals.length>0&&<div style={{padding:'11px 13px',background:'rgba(184,92,0,.06)',border:'1px solid rgba(184,92,0,.22)',borderRadius:'var(--r2)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                  <div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--do)',fontWeight:600}}>📋 COO suggests rescheduling {overdueProposals.length} overdue task{overdueProposals.length!==1?'s':''}</div>
+                  <div style={{display:'flex',gap:5}}>
+                    <button onClick={async()=>{await Promise.all(overdueProposals.map(m=>api.tasks.update(m.task_id,{date:m.new_date})));setTasks(ts=>ts.map(t=>{const m=overdueProposals.find(x=>x.task_id===t.id);return m?{...t,date:m.new_date}:t}));setOverdueProposals([])}} style={{padding:'3px 10px',borderRadius:4,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',fontWeight:500}}>Accept all</button>
+                    <button onClick={()=>setOverdueProposals([])} style={{padding:'3px 8px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer'}}>Dismiss</button>
+                  </div>
+                </div>
+                {overdueProposals.map((m,i)=>{
+                  const t=tasks.find(x=>x.id===m.task_id)
+                  if(!t)return null
+                  const nd=new Date(m.new_date+'T12:00:00');const dl=nd.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+                  return(<div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:i>0?'1px solid rgba(184,92,0,.1)':'none'}}>
+                    <span style={{flex:1,fontSize:13,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</span>
+                    <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flexShrink:0}}>→ {dl}</span>
+                    <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',flexShrink:0,maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.reason}</span>
+                    <button onClick={async()=>{await api.tasks.update(m.task_id,{date:m.new_date});setTasks(ts=>ts.map(t=>t.id===m.task_id?{...t,date:m.new_date}:t));setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))}} style={{padding:'2px 8px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer'}}>✓</button>
+                    <button onClick={()=>setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))} style={{padding:'2px 6px',borderRadius:3,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer'}}>✗</button>
+                  </div>)
+                })}
+              </div>}
               {!schedLoading&&schedule&&<>
                 {oura?.connected&&oura?.data?.readiness&&<div style={{padding:'9px 13px',background:'rgba(15,110,86,0.07)',border:'1px solid rgba(15,110,86,0.18)',borderRadius:'var(--r2)',display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:18}}>💍</span><div style={{flex:1}}><div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--del)',fontWeight:500}}>Oura readiness: {oura.data.readiness.score}/100 · Sleep: {oura.data.sleep?.score||'—'}/100</div><div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginTop:2}}>{oura.data.readiness.energy_note}</div></div></div>}
                 {schedule.coo_message&&<div style={{padding:'10px 14px',background:'var(--glass2)',backdropFilter:'blur(14px)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)',fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.7}}><span style={{color:'var(--acc2)',fontWeight:500}}>COO · </span>{schedule.coo_message}</div>}
