@@ -461,12 +461,14 @@ export default function App(){
   const[overdueProposals,setOverdueProposals]=useState([]) // [{task_id,new_date,reason}] from COO
   const[editingSlot,setEditingSlot]=useState(null)
   const[chatMsg,setChatMsg]=useState('')
+  const[chatSuggestion,setChatSuggestion]=useState('')
   const[chatHistory,setChatHistory]=useState([])
   const[chatLoading,setChatLoading]=useState(false)
   const[isRecording,setIsRecording]=useState(false)
   const[chatVisible,setChatVisible]=useState(false)
   const mediaRecorderRef=useRef(null)
   const timerRefs=useRef([])
+  const chatCompleteRef=useRef(null)
   const dragRef=useRef(null)
   const [taskOrder,setTaskOrder]=useState([])
   const [dragOver,setDragOver]=useState(null)
@@ -567,6 +569,19 @@ export default function App(){
     }
     return()=>{timerRefs.current.forEach(id=>clearTimeout(id));timerRefs.current=[]}
   },[status])
+  // Chat autocomplete — debounced Haiku call on each keystroke
+  useEffect(()=>{
+    if(chatCompleteRef.current)clearTimeout(chatCompleteRef.current)
+    if(!chatMsg.trim()||chatMsg.length<4||chatLoading){setChatSuggestion('');return}
+    chatCompleteRef.current=setTimeout(async()=>{
+      try{
+        const r=await fetch('/api/coo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'autocomplete',userMessage:chatMsg})})
+        const j=await r.json()
+        setChatSuggestion(j.result?.suggestion||'')
+      }catch{setChatSuggestion('')}
+    },550)
+    return()=>{if(chatCompleteRef.current)clearTimeout(chatCompleteRef.current)}
+  },[chatMsg,chatLoading])
 
   const doneTasks=tasks.filter(t=>t.done)
   const hrs=Math.round(doneTasks.reduce((s,t)=>s+t.blocks,0)*15/60*10)/10
@@ -902,7 +917,7 @@ export default function App(){
 
   async function sendChat(){
     if(!chatMsg.trim())return
-    const msg=chatMsg.trim();setChatMsg('');setChatLoading(true);setChatVisible(true)
+    const msg=chatMsg.trim();setChatMsg('');setChatSuggestion('');setChatLoading(true);setChatVisible(true)
     setChatHistory(h=>[...h.slice(-99),{role:'user',content:msg}])
     try{const r=await api.coo.checkin('chat',msg);const result=r?.result;if(result){const resp=result.message||result.headline||JSON.stringify(result);setChatHistory(h=>[...h.slice(-99),{role:'coo',content:resp}]);if(result.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}else if(r?.error){setChatHistory(h=>[...h.slice(-99),{role:'coo',content:`Error: ${r.error}`}])}}catch(e){setChatHistory(h=>[...h.slice(-99),{role:'coo',content:`Network error — ${e.message||'check Vercel logs'}`}])}
     setChatLoading(false)
@@ -2231,7 +2246,10 @@ export default function App(){
           )}
           <div style={{display:'flex',gap:6,alignItems:'center'}}>
             <button onClick={()=>setChatVisible(v=>!v)} style={{padding:'0 7px',height:32,borderRadius:6,border:'1px solid var(--gb2)',background:'var(--glass2)',color:'var(--txt3)',fontSize:13,cursor:'pointer',flexShrink:0}}>{chatVisible?'▾':'▸'}</button>
-            <input value={chatMsg} onChange={e=>setChatMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&(e.preventDefault(),sendChat())} placeholder="Ask COO anything…" style={{flex:1,background:'transparent',border:'1px solid var(--gb2)',borderRadius:6,padding:'6px 10px',outline:'none',color:'var(--txt)',fontSize:14.5,fontFamily:'var(--f)'}}/>
+            <div style={{flex:1,position:'relative',minWidth:0}}>
+              {chatSuggestion&&<div aria-hidden="true" style={{position:'absolute',inset:0,padding:'6px 10px',fontSize:14.5,fontFamily:'var(--f)',pointerEvents:'none',display:'flex',alignItems:'center',overflow:'hidden',whiteSpace:'pre'}}><span style={{visibility:'hidden'}}>{chatMsg}</span><span style={{color:'var(--txt3)',opacity:.45}}>{chatSuggestion}</span></div>}
+              <input value={chatMsg} onChange={e=>{setChatMsg(e.target.value);if(chatSuggestion)setChatSuggestion('')}} onKeyDown={e=>{if((e.key==='Tab'||e.key==='ArrowRight')&&chatSuggestion&&e.target.selectionStart===chatMsg.length){e.preventDefault();setChatMsg(chatMsg+chatSuggestion);setChatSuggestion('')}else if(e.key==='Escape'&&chatSuggestion){setChatSuggestion('')}else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}}} placeholder="Ask COO anything…" style={{width:'100%',background:'transparent',border:'1px solid var(--gb2)',borderRadius:6,padding:'6px 10px',outline:'none',color:'var(--txt)',fontSize:14.5,fontFamily:'var(--f)'}}/>
+            </div>
             <button onClick={isRecording?stopRecording:startRecording} title={isRecording?'Stop recording':'Voice input'} style={{width:32,height:32,borderRadius:'50%',border:`1px solid ${isRecording?'rgba(138,40,40,.4)':'var(--gb2)'}`,background:isRecording?'rgba(138,40,40,.12)':'var(--glass2)',cursor:'pointer',fontSize:17,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,animation:isRecording?'blink 1s infinite':'none'}}>{isRecording?'⏹':'🎙'}</button>
             <button onClick={sendChat} disabled={chatLoading||!chatMsg.trim()} style={{width:32,height:32,borderRadius:'50%',border:'none',background:chatLoading||!chatMsg.trim()?'var(--gb2)':'#1a5a3c',color:'#fff',cursor:chatLoading||!chatMsg.trim()?'default':'pointer',fontSize:17,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'background .15s'}}>↑</button>
           </div>

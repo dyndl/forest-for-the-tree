@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse, generateDelegationPlan, parseDoneList, generateWeeklyFeedback } from '@/lib/coo'
+import { generateCheckin, generateEveningRetro, generateWeeklyReview, extractAndStorePatterns, generateChatResponse, generateDelegationPlan, parseDoneList, generateWeeklyFeedback, generateChatAutocomplete } from '@/lib/coo'
 import { getImportantEmails, getTodayEvents } from '@/lib/google'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -90,6 +90,8 @@ export async function POST(req) {
     }
     const goals = delegateGoals || userCtx?.goals || []
     result = await generateDelegationPlan({ task: delegateTask || {}, goals, userCtx, emails, calendarEvents })
+  } else if (type === 'autocomplete') {
+    result = await generateChatAutocomplete({ partialMessage: userMessage, tasks, schedule })
   } else {
     // Free-form chat — fetch live email + calendar context so the COO can reference them
     let emails = [], calendarEvents = []
