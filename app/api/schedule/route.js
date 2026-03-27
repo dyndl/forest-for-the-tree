@@ -53,12 +53,13 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}))
 
   const encoder = new TextEncoder()
-  const send = (controller, data) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+  const { readable, writable } = new TransformStream()
+  const writer = writable.getWriter()
+  const send = (data) => writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        send(controller, { status: 'fetching' })
+  ;(async () => {
+    try {
+        await send({ status: 'fetching' })
 
         const currentHour = typeof body.localHour === 'number' ? body.localHour : new Date().getHours()
         const localToday = body.localDate || todayKey()
@@ -124,7 +125,7 @@ export async function POST(req) {
           } catch {}
         }
 
-        send(controller, { status: 'generating' })
+        await send({ status: 'generating' })
 
         const { chunks, planDateKey } = await generateMorningBriefWithOura({
           tasks, calendarEvents, emails,
@@ -144,12 +145,12 @@ export async function POST(req) {
 
         const plan = parseJSON(raw)
         if (!plan) {
-          send(controller, { error: 'COO failed to generate plan' })
+          await send({ error: 'COO failed to generate plan' })
           return
         }
         if (!plan.plan_date) plan.plan_date = planDateKey
 
-        send(controller, { status: 'saving' })
+        await send({ status: 'saving' })
 
         const planDate = plan.plan_date || (planForTomorrow ? localTomorrow : localToday)
         const slots = plan.slots.map(s => ({
@@ -240,17 +241,16 @@ export async function POST(req) {
           }
         }
 
-        send(controller, { schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
+        await send({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
       } catch (e) {
         console.error('schedule POST error:', e)
-        send(controller, { error: e?.message || 'Schedule generation failed' })
+        await send({ error: e?.message || 'Schedule generation failed' }).catch(() => {})
       } finally {
-        controller.close()
+        await writer.close().catch(() => {})
       }
-    },
-  })
+  })()
 
-  return new Response(stream, {
+  return new Response(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
