@@ -157,39 +157,77 @@ export async function POST(req) {
   // Auto-create proposed tasks for task-type slots that don't yet have a task record
   const TASK_TYPES = new Set(['task', 'deep_work', null, undefined])
   const SKIP_TYPES = new Set(['break', 'lunch', 'free', 'event', 'optional_tonight'])
+
+  // Separate bundle slots (container) from regular task slots
   const taskSlots = slots.filter(s =>
     !SKIP_TYPES.has(s.type) && TASK_TYPES.has(s.type) &&
-    !s.taskId && s.label && s.quadrant !== 'eliminate'
+    !s.taskId && !s.bundle?.length && s.label && s.quadrant !== 'eliminate'
   )
+  const bundleSlots = slots.filter(s => s.bundle?.length > 0)
 
   let proposedTasks = []
-  if (taskSlots.length > 0) {
+  const hasWork = taskSlots.length > 0 || bundleSlots.some(s => s.bundle.some(sub => !sub.taskId && sub.label))
+  if (hasWork) {
     // Wipe previous COO-proposed tasks for this date to avoid stale duplicates on re-plan
     await supabaseAdmin.from('tasks').delete()
       .eq('user_id', userId).eq('date', planDate).eq('status', 'proposed').eq('source', 'coo')
 
-    const insertRows = taskSlots.map(s => ({
-      user_id: userId,
-      name: s.label,
-      q: s.quadrant || 'do',
-      cat: s.category || userCtx?.life_areas?.[0]?.key || 'admin',
-      blocks: s.duration_blocks || 2,
-      who: 'me',
-      notes: s.note && s.source_ref ? `${s.note}\n\nSource: ${s.source_ref}` : s.note || (s.source_ref ? `Source: ${s.source_ref}` : ''),
-      done: false,
-      date: planDate,
-      status: 'proposed',
-      source: 'coo',
-    }))
+    // Create tasks for regular (non-bundle) slots
+    if (taskSlots.length > 0) {
+      const insertRows = taskSlots.map(s => ({
+        user_id: userId,
+        name: s.label,
+        q: s.quadrant || 'do',
+        cat: s.category || userCtx?.life_areas?.[0]?.key || 'admin',
+        blocks: s.duration_blocks || 2,
+        who: 'me',
+        notes: s.note && s.source_ref ? `${s.note}\n\nSource: ${s.source_ref}` : s.note || (s.source_ref ? `Source: ${s.source_ref}` : ''),
+        done: false,
+        date: planDate,
+        status: 'proposed',
+        source: 'coo',
+      }))
+      const { data: created } = await supabaseAdmin.from('tasks').insert(insertRows).select()
+      if (created?.length) {
+        proposedTasks = [...proposedTasks, ...created]
+        created.forEach((task, i) => {
+          const sl = slots.find(s => s.label === taskSlots[i].label && !s.taskId && !s.bundle?.length)
+          if (sl) sl.taskId = task.id
+        })
+      }
+    }
 
-    const { data: created } = await supabaseAdmin.from('tasks').insert(insertRows).select()
-    if (created?.length) {
-      proposedTasks = created
-      // Back-link task IDs into schedule slots
-      created.forEach((task, i) => {
-        const sl = slots.find(s => s.label === taskSlots[i].label && !s.taskId)
-        if (sl) sl.taskId = task.id
-      })
+    // Create tasks for bundle subtasks
+    for (const slot of bundleSlots) {
+      const needsTask = slot.bundle.filter(sub => !sub.taskId && sub.label)
+      if (!needsTask.length) continue
+      const insertRows = needsTask.map(sub => ({
+        user_id: userId,
+        name: sub.label,
+        q: sub.quadrant || slot.quadrant || 'do',
+        cat: sub.category || slot.category || userCtx?.life_areas?.[0]?.key || 'admin',
+        blocks: sub.duration_blocks || 2,
+        who: 'me',
+        notes: sub.source_ref ? `Source: ${sub.source_ref}` : '',
+        done: false,
+        date: planDate,
+        status: 'proposed',
+        source: 'coo',
+      }))
+      const { data: created } = await supabaseAdmin.from('tasks').insert(insertRows).select()
+      if (created?.length) {
+        proposedTasks = [...proposedTasks, ...created]
+        let ci = 0
+        for (const sub of slot.bundle) {
+          if (!sub.taskId && sub.label && created[ci]) {
+            sub.taskId = created[ci].id
+            ci++
+          }
+        }
+      }
+    }
+
+    if (proposedTasks.length) {
       record.slots = slots
       await supabaseAdmin.from('schedules').update({ slots }).eq('user_id', userId).eq('date', planDate)
     }
@@ -206,7 +244,7 @@ export async function PATCH(req) {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { action, slotIndex, reason, pushback_date, label, time, note, duration_blocks, localDate: clientDate } = await req.json()
+  const { action, slotIndex, reason, pushback_date, label, time, note, duration_blocks, subtaskStates, localDate: clientDate } = await req.json()
   const userId = session.user.email
 
   const schedDate = clientDate || activeScheduleDate()
@@ -215,10 +253,35 @@ export async function PATCH(req) {
 
   const slots = [...existing.slots]
 
-  if (action === 'accept') {
+  if (action === 'bundle_update') {
+    // subtaskStates: {0: 'accepted'|'vetoed', 1: ...} — keyed by subtask index as string
+    const bundle = slots[slotIndex]?.bundle
+    if (bundle && subtaskStates) {
+      for (const [iStr, state] of Object.entries(subtaskStates)) {
+        const i = parseInt(iStr)
+        if (bundle[i]) {
+          bundle[i].state = state
+          if (state === 'vetoed' && reason) bundle[i].veto_reason = reason
+        }
+      }
+      // Derive parent slot state from bundle subtask states
+      const subStates = bundle.map(s => s.state)
+      const allVetoed = subStates.every(s => s === 'vetoed')
+      const anyPending = subStates.some(s => s === 'pending')
+      slots[slotIndex].state = allVetoed ? 'vetoed' : anyPending ? 'pending' : 'accepted'
+      slots[slotIndex].bundle = bundle
+    }
+  } else if (action === 'accept') {
     slots[slotIndex].state = 'accepted'
   } else if (action === 'accept_all') {
-    slots.forEach(s => { if (s.taskId && (s.state === 'pending' || s.state === 'optional')) s.state = 'accepted' })
+    slots.forEach(s => {
+      if (s.taskId && (s.state === 'pending' || s.state === 'optional')) s.state = 'accepted'
+      // Also accept all bundle subtasks
+      if (s.bundle?.length) {
+        s.bundle.forEach(sub => { if (sub.state === 'pending') sub.state = 'accepted' })
+        s.state = 'accepted'
+      }
+    })
   } else if (action === 'veto') {
     slots[slotIndex].state = 'vetoed'
     if (reason) slots[slotIndex].veto_reason = reason
@@ -243,10 +306,20 @@ export async function PATCH(req) {
     }
   }
 
-  // Recompute COO score after every slot state change
+  // Recompute COO score after every slot state change (bundles score at subtask level)
   const taskSlotsFinal = slots.filter(s => !['break','lunch','free','event','optional_tonight'].includes(s.type))
-  const acceptedFinal = taskSlotsFinal.filter(s => s.state === 'accepted').length
-  const vetoedFinal = taskSlotsFinal.filter(s => s.state === 'vetoed').length
+  let acceptedFinal = 0, vetoedFinal = 0
+  for (const s of taskSlotsFinal) {
+    if (s.bundle?.length) {
+      for (const sub of s.bundle) {
+        if (sub.state === 'accepted') acceptedFinal++
+        else if (sub.state === 'vetoed') vetoedFinal++
+      }
+    } else {
+      if (s.state === 'accepted') acceptedFinal++
+      else if (s.state === 'vetoed') vetoedFinal++
+    }
+  }
   const total = acceptedFinal + vetoedFinal
   const cooScore = total > 0 ? Math.round((acceptedFinal / total) * 100) : null
 

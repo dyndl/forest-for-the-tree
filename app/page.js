@@ -458,6 +458,8 @@ export default function App(){
   const[vetoPanel,setVetoPanel]=useState(null)
   const[vetoReason,setVetoReason]=useState('')
   const[vetoPushback,setVetoPushback]=useState('')
+  const[bundlePanel,setBundlePanel]=useState(null) // {idx, checks:{0:true,1:false,...}}
+  const[bundleReason,setBundleReason]=useState('')
   const[overdueProposals,setOverdueProposals]=useState([]) // [{task_id,new_date,reason}] from COO
   const[editingSlot,setEditingSlot]=useState(null)
   const[chatMsg,setChatMsg]=useState('')
@@ -640,6 +642,35 @@ export default function App(){
   }
 
   function openVetoPanel(idx){setVetoPanel({idx});setVetoReason('');setVetoPushback('')}
+  function openBundlePanel(idx){
+    const bundle=schedule?.slots?.[idx]?.bundle||[]
+    const checks={}
+    bundle.forEach((sub,i)=>{checks[i]=sub.state!=='vetoed'})
+    setBundlePanel({idx,checks});setBundleReason('')
+    // Close other panels
+    setVetoPanel(null);setEditingSlot(null)
+  }
+  async function submitBundle(){
+    if(!bundlePanel)return
+    const{idx,checks}=bundlePanel
+    const subtaskStates={}
+    Object.entries(checks).forEach(([k,v])=>{subtaskStates[k]=v?'accepted':'vetoed'})
+    setBundlePanel(null);setBundleReason('')
+    const prev=schedule
+    setSchedule(s=>{
+      const slots=[...s.slots]
+      const bundle=(slots[idx].bundle||[]).map((sub,i)=>({...sub,state:subtaskStates[i]||sub.state}))
+      const subStates=bundle.map(s=>s.state)
+      const allVetoed=subStates.every(s=>s==='vetoed')
+      const anyPending=subStates.some(s=>s==='pending')
+      slots[idx]={...slots[idx],bundle,state:allVetoed?'vetoed':anyPending?'pending':'accepted'}
+      return{...s,slots}
+    })
+    try{
+      const{slots}=await api.schedule.patch('bundle_update',idx,{subtaskStates,reason:bundleReason||undefined,localDate:schedule?.date})
+      if(slots)setSchedule(s=>({...s,slots}))
+    }catch{setSchedule(prev)}
+  }
   async function submitVeto(){
     if(!vetoPanel)return
     const idx=vetoPanel.idx,reason=vetoReason,pushDate=vetoPushback?horizonDate(vetoPushback):undefined
@@ -1075,7 +1106,7 @@ export default function App(){
 
   const viewTitle={done:'Done list',home:"Today's field",schedule:'COO Schedule',agents:'Agent network',log:'Performance log',settings:'Settings',tree:'Life tree',goals:'Goals',jobs:'Job leads'}
   const statusColor={idle:'#b0ccb8',thinking:'#b85c00',alert:'#8a2828',ok:'#0f6e56'}
-  const pendingSlots=schedule?.slots?.filter(s=>s.taskId&&(s.state==='pending'||s.state==='optional')).length||0
+  const pendingSlots=schedule?.slots?.filter(s=>(s.taskId||(s.bundle?.length>0))&&(s.state==='pending'||s.state==='optional')).length||0
   const alertAgents=agents.filter(a=>a.status==='alert').length
   const navItems=[
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
@@ -1882,24 +1913,60 @@ export default function App(){
                             <div style={{fontFamily:'var(--m)',fontSize:'11.5px',color:'var(--txt3)',width:42,flexShrink:0,paddingTop:9,textAlign:'right'}}>{slot.time}</div>
                             <div style={{width:1,background:'var(--gb2)',flexShrink:0,position:'relative'}}><div style={{position:'absolute',top:10,left:-3,width:7,height:7,borderRadius:'50%',background:isTonight?'rgba(90,72,140,.3)':'var(--gb2)'}}/></div>
                             <div style={{flex:1,borderRadius:'var(--r)',padding:'7px 10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:bg,border:`1px solid ${bd}`,opacity:slot.state==='vetoed'?.38:1}}>
-                              <div>
+                              <div style={{minWidth:0}}>
                                 <div style={{fontSize:14,color:'var(--txt)',textDecoration:slot.state==='vetoed'?'line-through':'none'}}>{slot.label}</div>
                                 {slot.note&&<div style={{fontSize:11.5,color:'var(--txt3)',fontFamily:'var(--m)',marginTop:2}}>{slot.note}</div>}
-                                {slot.duration_blocks&&<div style={{fontSize:11,color:'var(--txt3)',fontFamily:'var(--m)',marginTop:1}}>{slot.duration_blocks*15}min</div>}
+                                {slot.bundle?.length>0
+                                  ?<div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginTop:2}}>{slot.bundle.length} tasks · {slot.duration_blocks*15}min</div>
+                                  :slot.duration_blocks&&<div style={{fontSize:11,color:'var(--txt3)',fontFamily:'var(--m)',marginTop:1}}>{slot.duration_blocks*15}min</div>}
                               </div>
                               <div style={{display:'flex',gap:4,flexShrink:0}}>
-                                {(slot.state==='pending'||slot.state==='optional')&&<>
-                                  <button onClick={()=>acceptSlot(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500}}>✓</button>
-                                  <button onClick={()=>openVetoPanel(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(184,92,0,.25)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontWeight:500}}>✗</button>
-                                  <button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.5)',color:'var(--txt2)',fontFamily:'var(--m)'}}>✎</button>
-                                </>}
-                                {slot.state==='accepted'&&<><span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',padding:'3px 6px'}}>✓ accepted</span><button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.4)',color:'var(--txt3)',fontFamily:'var(--m)'}}>✎</button></>}
-                                {slot.state==='vetoed'&&<span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--warn)',padding:'3px 6px'}}>vetoed</span>}
+                                {slot.bundle?.length>0?(<>
+                                  {/* Bundle slot — one panel for all subtasks */}
+                                  {slot.state!=='vetoed'&&<button onClick={()=>bundlePanel?.idx===idx?setBundlePanel(null):openBundlePanel(idx)} style={{padding:'3px 9px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(26,95,168,.35)',background:bundlePanel?.idx===idx?'rgba(26,95,168,.15)':'rgba(26,95,168,.07)',color:'#1a5fa8',fontFamily:'var(--m)',fontWeight:500,whiteSpace:'nowrap'}}>{bundlePanel?.idx===idx?'▴ Close':'▾ Review'}</button>}
+                                  {slot.state==='vetoed'&&<span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--warn)',padding:'3px 6px'}}>all vetoed</span>}
+                                  {slot.state==='accepted'&&<span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',padding:'3px 6px'}}>✓ done</span>}
+                                </>):(<>
+                                  {(slot.state==='pending'||slot.state==='optional')&&<>
+                                    <button onClick={()=>acceptSlot(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500}}>✓</button>
+                                    <button onClick={()=>openVetoPanel(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(184,92,0,.25)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontWeight:500}}>✗</button>
+                                    <button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.5)',color:'var(--txt2)',fontFamily:'var(--m)'}}>✎</button>
+                                  </>}
+                                  {slot.state==='accepted'&&<><span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',padding:'3px 6px'}}>✓ accepted</span><button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.4)',color:'var(--txt3)',fontFamily:'var(--m)'}}>✎</button></>}
+                                  {slot.state==='vetoed'&&<span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--warn)',padding:'3px 6px'}}>vetoed</span>}
+                                </>)}
                               </div>
                             </div>
                           </div>
-                          {/* Veto reason panel */}
-                          {vetoPanel?.idx===idx&&<div style={{display:'flex',gap:8,marginTop:3}}>
+                          {/* Bundle review panel — one panel, checkboxes per subtask, single shared reason */}
+                          {bundlePanel?.idx===idx&&slot.bundle?.length>0&&<div style={{display:'flex',gap:8,marginTop:3}}>
+                            <div style={{width:50,flexShrink:0}}/>
+                            <div style={{flex:1,padding:'10px 12px',background:'rgba(26,95,168,.04)',border:'1px solid rgba(26,95,168,.2)',borderRadius:6,marginLeft:8}}>
+                              <div style={{fontFamily:'var(--m)',fontSize:11,color:'#1a5fa8',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <span>Select tasks to accept — uncheck to veto</span>
+                                <div style={{display:'flex',gap:5}}>
+                                  <button onClick={()=>setBundlePanel(p=>({...p,checks:Object.fromEntries(slot.bundle.map((_,i)=>[i,true]))}))} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.08)',color:'var(--ok)',cursor:'pointer'}}>All ✓</button>
+                                  <button onClick={()=>setBundlePanel(p=>({...p,checks:Object.fromEntries(slot.bundle.map((_,i)=>[i,false]))}))} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:3,border:'1px solid rgba(184,92,0,.3)',background:'rgba(184,92,0,.08)',color:'var(--do)',cursor:'pointer'}}>All ✗</button>
+                                </div>
+                              </div>
+                              {slot.bundle.map((sub,i)=>(
+                                <label key={i} style={{display:'flex',alignItems:'center',gap:9,padding:'6px 8px',borderRadius:5,marginBottom:3,background:bundlePanel.checks[i]===false?'rgba(184,92,0,.05)':'rgba(15,110,86,.04)',border:`1px solid ${bundlePanel.checks[i]===false?'rgba(184,92,0,.18)':'rgba(15,110,86,.12)'}`,cursor:'pointer',transition:'background .12s'}}>
+                                  <input type="checkbox" checked={bundlePanel.checks[i]!==false} onChange={e=>setBundlePanel(p=>({...p,checks:{...p.checks,[i]:e.target.checked}}))} style={{width:14,height:14,accentColor:'var(--ok)',cursor:'pointer',flexShrink:0}}/>
+                                  <span style={{flex:1,fontSize:13,color:bundlePanel.checks[i]===false?'var(--txt3)':'var(--txt)',textDecoration:bundlePanel.checks[i]===false?'line-through':'none'}}>{sub.label}</span>
+                                  {sub.duration_blocks&&<span style={{fontFamily:'var(--m)',fontSize:10.5,color:'var(--txt3)',flexShrink:0}}>{sub.duration_blocks*15}min</span>}
+                                </label>
+                              ))}
+                              <div style={{marginTop:8}}>
+                                <textarea value={bundleReason} onChange={e=>setBundleReason(e.target.value)} rows={2} placeholder="Reason for any vetoes (optional — COO learns from it)…" style={{width:'100%',background:'rgba(255,255,255,.75)',border:'1px solid rgba(26,95,168,.2)',borderRadius:5,color:'var(--txt)',fontSize:12.5,padding:'5px 8px',fontFamily:'var(--m)',resize:'none',outline:'none',lineHeight:1.5,boxSizing:'border-box'}}/>
+                              </div>
+                              <div style={{display:'flex',gap:5,marginTop:7}}>
+                                <button onClick={submitBundle} style={{padding:'4px 13px',borderRadius:4,border:'1px solid rgba(26,95,168,.3)',background:'rgba(26,95,168,.1)',color:'#1a5fa8',fontFamily:'var(--m)',fontSize:12,cursor:'pointer',fontWeight:500}}>Submit</button>
+                                <button onClick={()=>{setBundlePanel(null);setBundleReason('')}} style={{padding:'4px 10px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--m)',fontSize:12,cursor:'pointer'}}>Cancel</button>
+                              </div>
+                            </div>
+                          </div>}
+                          {/* Veto reason panel (non-bundle slots only) */}
+                          {vetoPanel?.idx===idx&&!slot.bundle?.length&&<div style={{display:'flex',gap:8,marginTop:3}}>
                             <div style={{width:50,flexShrink:0}}/>
                             <div style={{flex:1,padding:'9px 11px',background:'rgba(138,40,40,.04)',border:'1px solid rgba(138,40,40,.2)',borderRadius:6,marginLeft:8}}>
                               <div style={{fontFamily:'var(--m)',fontSize:11,color:'#8a2828',marginBottom:6}}>Why skip this? <span style={{color:'var(--txt3)',fontWeight:400}}>(optional — COO learns from it)</span></div>
