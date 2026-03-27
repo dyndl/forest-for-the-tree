@@ -130,6 +130,51 @@ export async function PATCH(req) {
   let xpEvent = null
   if (newlyDone) {
     xpEvent = await awardXP(userId, existing.blocks || 2).catch(() => null)
+
+    // Bundle completion bonus: if this task is part of a bundle and all siblings are now done,
+    // award bonus XP proportional to bundle size (encourages committing to full focus blocks)
+    try {
+      const today = todayKey()
+      const { data: sched } = await supabaseAdmin
+        .from('schedules').select('slots').eq('user_id', userId).eq('date', today).maybeSingle()
+      if (sched?.slots) {
+        for (const slot of sched.slots) {
+          if (!slot.bundle?.length) continue
+          const bundleItem = slot.bundle.find(sub => sub.taskId === id)
+          if (!bundleItem) continue
+          const siblingIds = slot.bundle.filter(sub => sub.taskId && sub.taskId !== id).map(sub => sub.taskId)
+          if (!siblingIds.length) break // solo "bundle" — no bonus
+          const { data: siblings } = await supabaseAdmin
+            .from('tasks').select('done').in('id', siblingIds).eq('user_id', userId)
+          if (siblings?.every(t => t.done)) {
+            // All siblings complete — award bonus XP directly (no streak re-increment)
+            const totalBlocks = slot.bundle.reduce((s, sub) => s + (sub.duration_blocks || 2), 0)
+            const bonusBlocks = Math.ceil(totalBlocks * 0.3)
+            const bonusH = Math.round(bonusBlocks * 10)
+            const bonusW = Math.round(bonusBlocks * 5)
+            const { data: sp } = await supabaseAdmin
+              .from('tree_species').select('height_xp,width_xp,last_xp_event').eq('user_id', userId).maybeSingle()
+            if (sp) {
+              await supabaseAdmin.from('tree_species').update({
+                height_xp: (sp.height_xp || 0) + bonusH,
+                width_xp: (sp.width_xp || 0) + bonusW,
+                last_xp_event: {
+                  ...(sp.last_xp_event || {}),
+                  h_gained: ((sp.last_xp_event?.h_gained || 0) + bonusH),
+                  w_gained: ((sp.last_xp_event?.w_gained || 0) + bonusW),
+                  bundle_bonus: true,
+                  bundle_size: slot.bundle.length,
+                },
+              }).eq('user_id', userId)
+              if (xpEvent) {
+                xpEvent = { ...xpEvent, bundle_bonus: { h: bonusH, w: bonusW, bundle_size: slot.bundle.length } }
+              }
+            }
+          }
+          break
+        }
+      }
+    } catch {} // bonus is non-critical — never block the response
   }
 
   // If marking done, sync to Google Tasks

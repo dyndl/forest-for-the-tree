@@ -653,10 +653,12 @@ export default function App(){
   async function submitBundle(){
     if(!bundlePanel)return
     const{idx,checks}=bundlePanel
+    // checks[i]: true=accept, false=veto, 'done'=accept+mark task done immediately
     const subtaskStates={}
-    Object.entries(checks).forEach(([k,v])=>{subtaskStates[k]=v?'accepted':'vetoed'})
+    Object.entries(checks).forEach(([k,v])=>{subtaskStates[k]=v==='done'?'accepted':v?'accepted':'vetoed'})
     setBundlePanel(null);setBundleReason('')
     const prev=schedule
+    const slot=schedule?.slots?.[idx]
     setSchedule(s=>{
       const slots=[...s.slots]
       const bundle=(slots[idx].bundle||[]).map((sub,i)=>({...sub,state:subtaskStates[i]||sub.state}))
@@ -666,6 +668,17 @@ export default function App(){
       slots[idx]={...slots[idx],bundle,state:allVetoed?'vetoed':anyPending?'pending':'accepted'}
       return{...s,slots}
     })
+    // Fire immediate done updates for 'done' items
+    const doneItems=Object.entries(checks).filter(([,v])=>v==='done').map(([k])=>parseInt(k))
+    if(doneItems.length&&slot?.bundle){
+      doneItems.forEach(i=>{
+        const taskId=slot.bundle[i]?.taskId
+        if(taskId){
+          setTasks(ts=>ts.map(t=>t.id===taskId?{...t,done:true}:t))
+          api.tasks.update(taskId,{done:true}).catch(()=>{})
+        }
+      })
+    }
     try{
       const{slots}=await api.schedule.patch('bundle_update',idx,{subtaskStates,reason:bundleReason||undefined,localDate:schedule?.date})
       if(slots)setSchedule(s=>({...s,slots}))
@@ -691,6 +704,19 @@ export default function App(){
     const prev=schedule
     setSchedule(s=>{const slots=[...s.slots];slots[idx]={...slots[idx],state:'accepted'};return{...s,slots}})
     try{const{slots}=await api.schedule.patch('accept',idx,{localDate:schedule?.date});if(slots)setSchedule(s=>({...s,slots}))}catch{setSchedule(prev)}
+  }
+  async function alreadyDoneSlot(idx){
+    const slot=schedule?.slots?.[idx]
+    if(!slot)return
+    const prev=schedule
+    setSchedule(s=>{const slots=[...s.slots];slots[idx]={...slots[idx],state:'accepted'};return{...s,slots}})
+    setTasks(ts=>ts.map(t=>t.id===slot.taskId?{...t,done:true}:t))
+    try{
+      await Promise.all([
+        api.schedule.patch('accept',idx,{localDate:schedule?.date}),
+        slot.taskId&&api.tasks.update(slot.taskId,{done:true}),
+      ])
+    }catch{setSchedule(prev);setTasks(ts=>ts.map(t=>t.id===slot.taskId?{...t,done:false}:t))}
   }
   async function acceptAll(){
     const prev=schedule
@@ -833,6 +859,11 @@ export default function App(){
   async function wontDoTask(id){
     setTasks(ts=>ts.map(x=>x.id===id?{...x,status:'wont_do'}:x))
     try{await api.tasks.update(id,{status:'wont_do'})}catch{setTasks(ts=>ts.map(x=>x.id===id?{...x,status:'proposed'}:x))}
+  }
+  async function doneProposal(id){
+    // Accept proposal AND immediately mark done — for tasks already completed before seeing the proposal
+    setTasks(ts=>ts.map(x=>x.id===id?{...x,status:'active',done:true}:x))
+    try{await api.tasks.update(id,{status:'active',done:true})}catch{setTasks(ts=>ts.map(x=>x.id===id?{...x,status:'proposed',done:false}:x))}
   }
 
   function handleZoneClick({q,horizon}){
@@ -1624,6 +1655,7 @@ export default function App(){
                         </>
                       ):t.status==='proposed'?(
                         <>
+                          <button onClick={()=>{doneProposal(t.id);setMatrixPanel(null)}} style={{padding:'5px 14px',borderRadius:5,border:'1px solid rgba(15,110,86,.45)',background:'rgba(15,110,86,.18)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:13,cursor:'pointer',fontWeight:600}}>✓ Already done</button>
                           <button onClick={()=>{confirmTask(t.id);setMatrixPanel(null)}} style={{padding:'5px 14px',borderRadius:5,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:13,cursor:'pointer',fontWeight:500}}>✓ Accept</button>
                           <button onClick={()=>setMatrixEdit({name:t.name,blocks:t.blocks,cat:t.cat})} style={{padding:'5px 11px',borderRadius:5,border:'1px solid var(--gb2)',background:'rgba(255,255,255,.5)',color:'var(--txt2)',fontFamily:'var(--m)',fontSize:13,cursor:'pointer'}}>✎ Edit</button>
                           <button onClick={()=>{wontDoTask(t.id);setMatrixPanel(null)}} style={{padding:'5px 11px',borderRadius:5,border:'1px solid rgba(138,40,40,.2)',background:'rgba(138,40,40,.07)',color:'#8a2828',fontFamily:'var(--m)',fontSize:13,cursor:'pointer'}}>✗ Reject</button>
@@ -1735,7 +1767,8 @@ export default function App(){
                         <div style={{display:'flex',gap:3,alignItems:'center',flexShrink:0}}>
                           {t.date!==todayStr()&&<span style={{fontFamily:'var(--m)',fontSize:9.5,color:'var(--txt3)',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:3,padding:'1px 4px'}}>{t.date===addDays(1)?'tmrw':t.date?.slice(5)}</span>}
                           {t.status==='proposed'
-                            ?<><button onClick={()=>confirmTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',cursor:'pointer'}}>✓</button>
+                            ?<><button onClick={()=>doneProposal(t.id)} title="Already done" style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(15,110,86,.45)',background:'rgba(15,110,86,.15)',color:'var(--ok)',cursor:'pointer',fontWeight:600}}>✓ done</button>
+                              <button onClick={()=>confirmTask(t.id)} title="Accept" style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',cursor:'pointer'}}>✓</button>
                               <button onClick={()=>wontDoTask(t.id)} style={{fontFamily:'var(--m)',fontSize:10.5,padding:'2px 6px',borderRadius:3,border:'1px solid rgba(138,40,40,.2)',background:'rgba(138,40,40,.07)',color:'#8a2828',cursor:'pointer'}}>✗</button></>
                             :<><span className={`pill pq-${t.q}`}>{t.q}</span><span className={`pill pc-${t.cat}`}>{t.cat}</span><span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)'}}>{t.blocks}×</span></>
                           }
@@ -1928,7 +1961,8 @@ export default function App(){
                                   {slot.state==='accepted'&&<span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',padding:'3px 6px'}}>✓ done</span>}
                                 </>):(<>
                                   {(slot.state==='pending'||slot.state==='optional')&&<>
-                                    <button onClick={()=>acceptSlot(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500}}>✓</button>
+                                    {slot.taskId&&<button onClick={()=>alreadyDoneSlot(idx)} title="Already done — accept + mark complete" style={{padding:'3px 7px',borderRadius:4,fontSize:11,cursor:'pointer',border:'1px solid rgba(15,110,86,.45)',background:'rgba(15,110,86,.18)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:600,whiteSpace:'nowrap'}}>✓ done</button>}
+                                    <button onClick={()=>acceptSlot(idx)} title="Accept this task" style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500}}>✓</button>
                                     <button onClick={()=>openVetoPanel(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(184,92,0,.25)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontWeight:500}}>✗</button>
                                     <button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.5)',color:'var(--txt2)',fontFamily:'var(--m)'}}>✎</button>
                                   </>}
@@ -1943,18 +1977,20 @@ export default function App(){
                             <div style={{width:50,flexShrink:0}}/>
                             <div style={{flex:1,padding:'10px 12px',background:'rgba(26,95,168,.04)',border:'1px solid rgba(26,95,168,.2)',borderRadius:6,marginLeft:8}}>
                               <div style={{fontFamily:'var(--m)',fontSize:11,color:'#1a5fa8',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                                <span>Select tasks to accept — uncheck to veto</span>
+                                <span>Select tasks — ✓ done = already completed</span>
                                 <div style={{display:'flex',gap:5}}>
+                                  <button onClick={()=>setBundlePanel(p=>({...p,checks:Object.fromEntries(slot.bundle.map((_,i)=>[i,'done']))}))} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:3,border:'1px solid rgba(15,110,86,.4)',background:'rgba(15,110,86,.14)',color:'var(--ok)',cursor:'pointer',fontWeight:600}}>All done</button>
                                   <button onClick={()=>setBundlePanel(p=>({...p,checks:Object.fromEntries(slot.bundle.map((_,i)=>[i,true]))}))} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.08)',color:'var(--ok)',cursor:'pointer'}}>All ✓</button>
                                   <button onClick={()=>setBundlePanel(p=>({...p,checks:Object.fromEntries(slot.bundle.map((_,i)=>[i,false]))}))} style={{fontFamily:'var(--m)',fontSize:10,padding:'2px 7px',borderRadius:3,border:'1px solid rgba(184,92,0,.3)',background:'rgba(184,92,0,.08)',color:'var(--do)',cursor:'pointer'}}>All ✗</button>
                                 </div>
                               </div>
                               {slot.bundle.map((sub,i)=>(
-                                <label key={i} style={{display:'flex',alignItems:'center',gap:9,padding:'6px 8px',borderRadius:5,marginBottom:3,background:bundlePanel.checks[i]===false?'rgba(184,92,0,.05)':'rgba(15,110,86,.04)',border:`1px solid ${bundlePanel.checks[i]===false?'rgba(184,92,0,.18)':'rgba(15,110,86,.12)'}`,cursor:'pointer',transition:'background .12s'}}>
+                                <div key={i} style={{display:'flex',alignItems:'center',gap:9,padding:'6px 8px',borderRadius:5,marginBottom:3,background:bundlePanel.checks[i]===false?'rgba(184,92,0,.05)':bundlePanel.checks[i]==='done'?'rgba(15,110,86,.09)':'rgba(15,110,86,.04)',border:`1px solid ${bundlePanel.checks[i]===false?'rgba(184,92,0,.18)':bundlePanel.checks[i]==='done'?'rgba(15,110,86,.25)':'rgba(15,110,86,.12)'}`,transition:'background .12s'}}>
                                   <input type="checkbox" checked={bundlePanel.checks[i]!==false} onChange={e=>setBundlePanel(p=>({...p,checks:{...p.checks,[i]:e.target.checked}}))} style={{width:14,height:14,accentColor:'var(--ok)',cursor:'pointer',flexShrink:0}}/>
-                                  <span style={{flex:1,fontSize:13,color:bundlePanel.checks[i]===false?'var(--txt3)':'var(--txt)',textDecoration:bundlePanel.checks[i]===false?'line-through':'none'}}>{sub.label}</span>
+                                  <span style={{flex:1,fontSize:13,color:bundlePanel.checks[i]===false?'var(--txt3)':'var(--txt)',textDecoration:bundlePanel.checks[i]===false?'line-through':'none',cursor:'pointer'}} onClick={()=>setBundlePanel(p=>({...p,checks:{...p.checks,[i]:p.checks[i]!==false}}))}>{sub.label}</span>
                                   {sub.duration_blocks&&<span style={{fontFamily:'var(--m)',fontSize:10.5,color:'var(--txt3)',flexShrink:0}}>{sub.duration_blocks*15}min</span>}
-                                </label>
+                                  {bundlePanel.checks[i]!==false&&<button onClick={()=>setBundlePanel(p=>({...p,checks:{...p.checks,[i]:p.checks[i]==='done'?true:'done'}}))} title="Already done" style={{fontFamily:'var(--m)',fontSize:10,padding:'1px 6px',borderRadius:3,border:`1px solid ${bundlePanel.checks[i]==='done'?'rgba(15,110,86,.5)':'rgba(15,110,86,.25)'}`,background:bundlePanel.checks[i]==='done'?'rgba(15,110,86,.2)':'transparent',color:'var(--ok)',cursor:'pointer',fontWeight:bundlePanel.checks[i]==='done'?600:400}}>{bundlePanel.checks[i]==='done'?'✓ done':'done?'}</button>}
+                                </div>
                               ))}
                               <div style={{marginTop:8}}>
                                 <textarea value={bundleReason} onChange={e=>setBundleReason(e.target.value)} rows={2} placeholder="Reason for any vetoes (optional — COO learns from it)…" style={{width:'100%',background:'rgba(255,255,255,.75)',border:'1px solid rgba(26,95,168,.2)',borderRadius:5,color:'var(--txt)',fontSize:12.5,padding:'5px 8px',fontFamily:'var(--m)',resize:'none',outline:'none',lineHeight:1.5,boxSizing:'border-box'}}/>
