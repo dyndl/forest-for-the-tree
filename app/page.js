@@ -23,25 +23,34 @@ const api={
     generate:async(ctx,onStatus)=>{
       const res=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ctx)}).catch(()=>null)
       if(!res)return{error:'Schedule request failed — try again'}
-      // Non-SSE response (error, old bundle, or proxy): parse as JSON
       const ct=res.headers.get('content-type')||''
-      if(!ct.includes('event-stream')){
-        try{return await res.json()}catch{return{error:await res.text().catch(()=>'Schedule request failed')}}
-      }
-      if(!res.body)return{error:'No response body'}
-      const reader=res.body.getReader();const dec=new TextDecoder();let buf=''
-      try{
-        while(true){
-          const{done,value}=await reader.read();if(done)break
-          buf+=dec.decode(value,{stream:true})
-          const lines=buf.split('\n');buf=lines.pop()||''
-          for(const line of lines){
-            if(!line.startsWith('data: '))continue
-            try{const ev=JSON.parse(line.slice(6));if(ev.status)onStatus?.(ev.status);if(ev.schedule||ev.error)return ev}catch{}
+      // Use streaming reader if server signals SSE and body is available
+      if(ct.includes('event-stream')&&res.body){
+        const reader=res.body.getReader();const dec=new TextDecoder();let buf=''
+        try{
+          while(true){
+            const{done,value}=await reader.read();if(done)break
+            buf+=dec.decode(value,{stream:true})
+            const lines=buf.split('\n');buf=lines.pop()||''
+            for(const line of lines){
+              if(!line.startsWith('data: '))continue
+              try{const ev=JSON.parse(line.slice(6));if(ev.status)onStatus?.(ev.status);if(ev.schedule||ev.error)return ev}catch{}
+            }
           }
+        }finally{try{reader.releaseLock()}catch{}}
+        return{error:'Stream ended without result'}
+      }
+      // Non-SSE or missing CT: read as text first (avoids double-consume SyntaxError)
+      const text=await res.text().catch(()=>'')
+      // Detect SSE text even when content-type was wrong (dev proxy, stale bundle, etc.)
+      if(text.startsWith('data: ')||text.includes('\ndata: ')){
+        for(const line of text.split('\n')){
+          if(!line.startsWith('data: '))continue
+          try{const ev=JSON.parse(line.slice(6));if(ev.status)onStatus?.(ev.status);if(ev.schedule||ev.error)return ev}catch{}
         }
-      }finally{try{reader.releaseLock()}catch{}}
-      return{error:'Stream ended without result'}
+        return{error:'Stream ended without result'}
+      }
+      try{return JSON.parse(text)}catch{return{error:'Schedule request failed'}}
     },
     patch:(action,slotIndex,extra={})=>fetch('/api/schedule',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,slotIndex,...extra})}).then(r=>r.json()),
   },
