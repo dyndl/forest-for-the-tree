@@ -33,6 +33,9 @@ const DEFAULTS = {
     birthday_alerts:         true,
   },
   onboarding_complete: false,
+  looking_for_jobs: true,
+  show_health_snapshot: false,
+  health_baselines: {},
   /** sticky = one bg image until next evolution. rotate_load = random from tree_gallery_by_slug[current species slug] */
   tree_bg_mode: 'sticky',
   /** @deprecated rotation now uses tree_gallery_by_slug */

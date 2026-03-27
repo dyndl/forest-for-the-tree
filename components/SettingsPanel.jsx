@@ -200,6 +200,11 @@ export default function SettingsPanel() {
         <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={5} value={settings.outline || ''} onChange={e => set('outline', e.target.value)} placeholder="Paste your resume summary, LinkedIn About, or career history. The COO uses this for task proposals and life tree seeding." />
       </Section>
 
+      <Section title="Job search">
+        <Toggle label="Looking for jobs" value={settings.looking_for_jobs !== false} onChange={v => set('looking_for_jobs', v)} />
+        <p style={{ fontSize: 10.5, color: '#7aaa8a', marginTop: 6, lineHeight: 1.5 }}>Shows the Jobs tab with LinkedIn + ATS leads. When off, the tab is hidden — but the COO may still surface strong opportunities in your daily brief.</p>
+      </Section>
+
       <Section title="Life areas">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {(settings.life_areas || []).map((a, i) => (
@@ -361,6 +366,33 @@ export default function SettingsPanel() {
             </div>
           </div>
         )}
+      </Section>
+
+      <Section title="Health & wellness">
+        <Toggle label="Show health snapshot" value={!!settings.show_health_snapshot} onChange={v => set('show_health_snapshot', v)} />
+        <p style={{ fontSize: 10.5, color: '#7aaa8a', marginTop: 6, marginBottom: 12, lineHeight: 1.5 }}>Shows a health card in your schedule view with Oura readiness, sleep, HRV, and RHR — with a color status vs. your baselines.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+          <div>
+            <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Resting HR baseline (bpm)</label>
+            <input style={{ ...inputStyle, marginTop: 0 }} type="number" value={settings.health_baselines?.rhr_baseline || ''} onChange={e => set('health_baselines', { ...settings.health_baselines, rhr_baseline: e.target.value ? +e.target.value : undefined })} placeholder="e.g. 58" />
+          </div>
+          <div>
+            <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>HRV baseline (ms)</label>
+            <input style={{ ...inputStyle, marginTop: 0 }} type="number" value={settings.health_baselines?.hrv_baseline || ''} onChange={e => set('health_baselines', { ...settings.health_baselines, hrv_baseline: e.target.value ? +e.target.value : undefined })} placeholder="e.g. 45" />
+          </div>
+          <div>
+            <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>VO₂ Max</label>
+            <input style={{ ...inputStyle, marginTop: 0 }} type="number" value={settings.health_baselines?.vo2max || ''} onChange={e => set('health_baselines', { ...settings.health_baselines, vo2max: e.target.value ? +e.target.value : undefined })} placeholder="e.g. 42" />
+          </div>
+          <div>
+            <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Weight (lbs)</label>
+            <input style={{ ...inputStyle, marginTop: 0 }} type="number" value={settings.health_baselines?.weight_lbs || ''} onChange={e => set('health_baselines', { ...settings.health_baselines, weight_lbs: e.target.value ? +e.target.value : undefined })} placeholder="e.g. 175" />
+          </div>
+          <div>
+            <label style={{ ...mono, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7aaa8a', display: 'block', marginBottom: 2 }}>Height (inches, for BMI)</label>
+            <input style={{ ...inputStyle, marginTop: 0 }} type="number" value={settings.health_baselines?.height_in || ''} onChange={e => set('health_baselines', { ...settings.health_baselines, height_in: e.target.value ? +e.target.value : undefined })} placeholder="e.g. 70" />
+          </div>
+        </div>
       </Section>
 
       {/* ── INTEGRATIONS STATUS ── */}

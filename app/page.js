@@ -20,7 +20,21 @@ const api={
   },
   schedule:{
     get:()=>fetch('/api/schedule').then(r=>r.json()).catch(()=>({schedule:null})),
-    generate:(ctx)=>fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ctx)}).then(r=>r.json()),
+    generate:async(ctx,onStatus)=>{
+      const res=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ctx)}).catch(()=>null)
+      if(!res?.ok){const t=await res?.text().catch(()=>'');return{error:t||'Schedule request failed — try again'}}
+      const reader=res.body.getReader();const dec=new TextDecoder();let buf=''
+      while(true){
+        const{done,value}=await reader.read();if(done)break
+        buf+=dec.decode(value,{stream:true})
+        const lines=buf.split('\n');buf=lines.pop()||''
+        for(const line of lines){
+          if(!line.startsWith('data: '))continue
+          try{const ev=JSON.parse(line.slice(6));if(ev.status)onStatus?.(ev.status);if(ev.schedule||ev.error)return ev}catch{}
+        }
+      }
+      return{error:'Stream ended without result'}
+    },
     patch:(action,slotIndex,extra={})=>fetch('/api/schedule',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,slotIndex,...extra})}).then(r=>r.json()),
   },
   coo:{
@@ -617,13 +631,17 @@ export default function App(){
   }
 
   async function generateSchedule(){
-    setSchedLoading(true);setSchedError(null);setCooState('thinking');setCooLabel('Building your day…')
+    setSchedLoading(true);setSchedError(null);setCooState('thinking');setCooLabel('Reading your data…')
     try{
       const now=new Date()
       // Pass local date/hour so the server doesn't use UTC and plan the wrong day
       const localDate=now.toLocaleDateString('en-CA') // YYYY-MM-DD in local TZ
       const localTomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toLocaleDateString('en-CA')
-      const{schedule:s,error,proposed_tasks,task_migrations}=await api.schedule.generate({roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow})
+      const statusLabels={fetching:'Reading your data…',generating:'COO thinking…',saving:'Saving plan…'}
+      const{schedule:s,error,proposed_tasks,task_migrations}=await api.schedule.generate(
+        {roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow},
+        (status)=>setCooLabel(statusLabels[status]||'Building your day…')
+      )
       if(error)throw new Error(error)
       if(s)setSchedule(s)
       // Merge proposed tasks into matrix (replace any previous coo-proposed for same date)
@@ -1145,7 +1163,7 @@ export default function App(){
     {id:'done',icon:'✓',label:'Done',badge:doneTasks.length,bc:'var(--ok)'},
     {id:'goals',icon:'🎯',label:'Goals',badge:goals.filter(g=>g.status==='active').length,bc:'var(--ok)'},
     {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
-    {id:'jobs',icon:'📬',label:'Jobs',badge:jobData?.leads?.filter(l=>l.status==='new').length||0,bc:'var(--sch)'},
+    ...(settings?.looking_for_jobs!==false?[{id:'jobs',icon:'📬',label:'Jobs',badge:jobData?.leads?.filter(l=>l.status==='new').length||0,bc:'var(--sch)'}]:[]),
     {id:'tree',icon:'🌲',label:'Tree',badge:0,bc:''},
     {id:'log',icon:'◻',label:'Log',badge:0,bc:''},
     {id:'settings',icon:'⚙',label:'Settings',badge:0,bc:''},
@@ -1909,6 +1927,48 @@ export default function App(){
               {!schedLoading&&schedule&&<>
                 {oura?.connected&&oura?.data?.readiness&&<div style={{padding:'9px 13px',background:'rgba(15,110,86,0.07)',border:'1px solid rgba(15,110,86,0.18)',borderRadius:'var(--r2)',display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:18}}>💍</span><div style={{flex:1}}><div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--del)',fontWeight:500}}>Oura readiness: {oura.data.readiness.score}/100 · Sleep: {oura.data.sleep?.score||'—'}/100</div><div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginTop:2}}>{oura.data.readiness.energy_note}</div></div></div>}
                 {schedule.coo_message&&<div style={{padding:'10px 14px',background:'var(--glass2)',backdropFilter:'blur(14px)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)',fontFamily:'var(--m)',fontSize:13,color:'var(--txt2)',lineHeight:1.7}}><span style={{color:'var(--acc2)',fontWeight:500}}>COO · </span>{schedule.coo_message}</div>}
+                {(()=>{
+                  const od=schedule.oura_data;if(!settings?.show_health_snapshot||!od)return null
+                  const bl=settings?.health_baselines||{}
+                  const rd=od.readiness?.score;const sl=od.sleep?.score
+                  const hrv=od.sleep_detail?.average_hrv??od.readiness?.contributors?.hrv_balance??null
+                  const rhr=od.sleep_detail?.lowest_heart_rate??od.readiness?.contributors?.resting_heart_rate??null
+                  const bmi=bl.weight_lbs&&bl.height_in?(bl.weight_lbs*703/(bl.height_in*bl.height_in)).toFixed(1):null
+                  const scoreColor=(s)=>s==null?'#aaa':s<50?'#c03':'#b85c00'
+                  const baselineArrow=(val,base,lowerIsBetter=false)=>{
+                    if(!val||!base)return null
+                    const pct=((val-base)/base)*100
+                    const good=lowerIsBetter?pct<0:pct>0
+                    const bad=lowerIsBetter?pct>10:pct<-10
+                    const color=bad?'#c03':good?'#0f6e56':'#b85c00'
+                    return <span style={{fontFamily:'var(--m)',fontSize:10,color,marginLeft:3}}>{good?'↑':'↓'}{Math.abs(pct).toFixed(0)}%</span>
+                  }
+                  const worstScore=Math.min(rd??100,sl??100)
+                  const overallColor=worstScore<50?'#c03':worstScore<70?'#b85c00':'#0f6e56'
+                  const overallLabel=worstScore<50?'Low':worstScore<70?'Moderate':'Good'
+                  const metrics=[
+                    {label:'Readiness',val:rd!=null?`${rd}/100`:null,base:null,lowerBetter:false},
+                    {label:'Sleep',val:sl!=null?`${sl}/100`:null,base:null,lowerBetter:false},
+                    {label:'HRV',val:hrv!=null?`${Math.round(hrv)}ms`:null,base:bl.hrv_baseline,lowerBetter:false},
+                    {label:'RHR',val:rhr!=null?`${Math.round(rhr)}bpm`:null,base:bl.rhr_baseline,lowerBetter:true},
+                    {label:'VO₂ Max',val:bl.vo2max?`${bl.vo2max}`:null,base:null,lowerBetter:false},
+                    {label:'Weight',val:bl.weight_lbs?`${bl.weight_lbs}lb${bmi?` · BMI ${bmi}`:''}`:null,base:null,lowerBetter:false},
+                  ].filter(m=>m.val)
+                  return<div style={{padding:'10px 13px',background:'var(--glass2)',border:'1px solid var(--gb2)',borderRadius:'var(--r2)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                      <span style={{fontSize:15}}>🫀</span>
+                      <span style={{fontFamily:'var(--m)',fontSize:12,fontWeight:600,color:'var(--txt)'}}>Health Snapshot</span>
+                      <span style={{fontFamily:'var(--m)',fontSize:11,padding:'2px 8px',borderRadius:10,background:overallColor+'22',color:overallColor,border:`1px solid ${overallColor}44`,marginLeft:'auto'}}>{overallLabel}</span>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px 12px'}}>
+                      {metrics.map(m=><div key={m.label} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 0',borderBottom:'1px solid var(--gb2)'}}>
+                        <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flex:'0 0 70px'}}>{m.label}</span>
+                        <span style={{fontFamily:'var(--m)',fontSize:12,color:'var(--txt)',fontWeight:500}}>{m.val}</span>
+                        {baselineArrow(parseFloat(m.val),m.base,m.lowerBetter)}
+                      </div>)}
+                    </div>
+                  </div>
+                })()}
                 <div className="card" style={{flexShrink:0}}>
                   <div className="card-hdr"><span className="card-title">Top 3 MITs · {schedule.date&&schedule.date!==todayStr()?'tomorrow':'today'}</span></div>
                   <div style={{padding:'10px 13px 14px',display:'flex',flexDirection:'column',gap:6}}>
