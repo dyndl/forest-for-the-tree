@@ -382,7 +382,7 @@ function nextTwelveMonths(){
 export default function App(){
   const{data:session,status}=useSession()
   const router=useRouter()
-  const[view,setView]=useState('home')
+  const[view,setView]=useState('schedule')
   const[tasks,setTasks]=useState([])
   const[schedule,setSchedule]=useState(null)
   const[agents,setAgents]=useState([])
@@ -1063,12 +1063,12 @@ export default function App(){
   const pendingSlots=schedule?.slots?.filter(s=>s.taskId&&(s.state==='pending'||s.state==='optional')).length||0
   const alertAgents=agents.filter(a=>a.status==='alert').length
   const navItems=[
-    {id:'done',icon:'✓',label:'Done',badge:doneTasks.length,bc:'var(--ok)'},
-    {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
     {id:'schedule',icon:'◷',label:'Schedule',badge:pendingSlots,bc:'var(--danger)'},
-    {id:'jobs',icon:'📬',label:'Jobs',badge:jobData?.leads?.filter(l=>l.status==='new').length||0,bc:'var(--sch)'},
-    {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
+    {id:'home',icon:'◈',label:'Matrix',badge:tasks.filter(t=>!t.done).length,bc:'var(--ok)'},
+    {id:'done',icon:'✓',label:'Done',badge:doneTasks.length,bc:'var(--ok)'},
     {id:'goals',icon:'🎯',label:'Goals',badge:goals.filter(g=>g.status==='active').length,bc:'var(--ok)'},
+    {id:'agents',icon:'⬡',label:'Agents',badge:alertAgents,bc:'var(--danger)'},
+    {id:'jobs',icon:'📬',label:'Jobs',badge:jobData?.leads?.filter(l=>l.status==='new').length||0,bc:'var(--sch)'},
     {id:'tree',icon:'🌲',label:'Tree',badge:0,bc:''},
     {id:'log',icon:'◻',label:'Log',badge:0,bc:''},
     {id:'settings',icon:'⚙',label:'Settings',badge:0,bc:''},

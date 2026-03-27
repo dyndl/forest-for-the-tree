@@ -50,7 +50,8 @@ export async function POST(req) {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const body = await req.json()
+  const body = await req.json().catch(() => ({}))
+  try {
   // Use client-supplied local hour/date to avoid UTC server clock mismatches
   const currentHour = typeof body.localHour === 'number' ? body.localHour : new Date().getHours()
   const localToday = body.localDate || todayKey()
@@ -195,6 +196,10 @@ export async function POST(req) {
   }
 
   return Response.json({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
+  } catch (e) {
+    console.error('schedule POST error:', e)
+    return Response.json({ error: e?.message || 'Schedule generation failed' }, { status: 500 })
+  }
 }
 
 export async function PATCH(req) {
