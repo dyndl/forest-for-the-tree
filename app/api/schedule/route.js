@@ -22,7 +22,6 @@ function buildVetoHistory(schedules) {
 }
 function tomorrowKey() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) }
 function activeScheduleDate() {
-  // After 2PM with no today schedule, we surface tomorrow's schedule
   const h = new Date().getHours()
   return h >= 14 ? tomorrowKey() : todayKey()
 }
@@ -36,12 +35,10 @@ export async function GET() {
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
   const tomorrow = tomorrowKey()
 
-  // Query 3-day window: yesterday covers users whose local date lags UTC (US timezones at night)
   const { data: rows } = await supabaseAdmin.from('schedules').select('*')
     .eq('user_id', userId).in('date', [yesterday, today, tomorrow]).order('date', { ascending: false })
 
   if (!rows?.length) return Response.json({ schedule: null })
-  // Prefer today (UTC) → tomorrow (afternoon planning) → yesterday (US user late at night)
   return Response.json({ schedule: rows.find(r => r.date === today) || rows.find(r => r.date === tomorrow) || rows[rows.length - 1] || null })
 }
 
@@ -53,13 +50,13 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}))
 
   const encoder = new TextEncoder()
-  const { readable, writable } = new TransformStream()
-  const writer = writable.getWriter()
-  const send = (data) => writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-
-  ;(async () => {
-    try {
-        await send({ status: 'fetching' })
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch {}
+      }
+      try {
+        send({ status: 'fetching' })
 
         const currentHour = typeof body.localHour === 'number' ? body.localHour : new Date().getHours()
         const localToday = body.localDate || todayKey()
@@ -86,11 +83,11 @@ export async function POST(req) {
         const vetoHistory = buildVetoHistory(recentScheds)
 
         const goals = userCtx?.goals || []
-        const agentContributions = await gatherAgentContributions({
-          agents: agentRows, goals, tasks,
-          roadmap: body.roadmap || userCtx?.roadmap,
-          userCtx,
-        })
+        // Cap agent contributions at 4s — a slow/missing API key must not hang the whole request
+        const agentContributions = await Promise.race([
+          gatherAgentContributions({ agents: agentRows, goals, tasks, roadmap: body.roadmap || userCtx?.roadmap, userCtx }),
+          new Promise(resolve => setTimeout(() => resolve(''), 4000)),
+        ])
 
         let calendarEvents = [], emails = [], ouraData = null
 
@@ -125,7 +122,7 @@ export async function POST(req) {
           } catch {}
         }
 
-        await send({ status: 'generating' })
+        send({ status: 'generating' })
 
         const { chunks, planDateKey } = await generateMorningBriefWithOura({
           tasks, calendarEvents, emails,
@@ -137,20 +134,14 @@ export async function POST(req) {
           stream: true,
         })
 
-        // Accumulate streamed tokens (no need to forward individual chunks to client)
         let raw = ''
-        for await (const chunk of chunks) {
-          raw += chunk
-        }
+        for await (const chunk of chunks) { raw += chunk }
 
         const plan = parseJSON(raw)
-        if (!plan) {
-          await send({ error: 'COO failed to generate plan' })
-          return
-        }
+        if (!plan) { send({ error: 'COO failed to generate plan' }); return }
         if (!plan.plan_date) plan.plan_date = planDateKey
 
-        await send({ status: 'saving' })
+        send({ status: 'saving' })
 
         const planDate = plan.plan_date || (planForTomorrow ? localTomorrow : localToday)
         const slots = plan.slots.map(s => ({
@@ -241,20 +232,22 @@ export async function POST(req) {
           }
         }
 
-        await send({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
+        send({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
       } catch (e) {
         console.error('schedule POST error:', e)
-        await send({ error: e?.message || 'Schedule generation failed' }).catch(() => {})
+        send({ error: e?.message || 'Schedule generation failed' })
       } finally {
-        await writer.close().catch(() => {})
+        try { controller.close() } catch {}
       }
-  })()
+    },
+  })
 
-  return new Response(readable, {
+  return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }
@@ -273,7 +266,6 @@ export async function PATCH(req) {
   const slots = [...existing.slots]
 
   if (action === 'bundle_update') {
-    // subtaskStates: {0: 'accepted'|'vetoed', 1: ...} — keyed by subtask index as string
     const bundle = slots[slotIndex]?.bundle
     if (bundle && subtaskStates) {
       for (const [iStr, state] of Object.entries(subtaskStates)) {
@@ -283,7 +275,6 @@ export async function PATCH(req) {
           if (state === 'vetoed' && reason) bundle[i].veto_reason = reason
         }
       }
-      // Derive parent slot state from bundle subtask states
       const subStates = bundle.map(s => s.state)
       const allVetoed = subStates.every(s => s === 'vetoed')
       const anyPending = subStates.some(s => s === 'pending')
@@ -295,7 +286,6 @@ export async function PATCH(req) {
   } else if (action === 'accept_all') {
     slots.forEach(s => {
       if (s.taskId && (s.state === 'pending' || s.state === 'optional')) s.state = 'accepted'
-      // Also accept all bundle subtasks
       if (s.bundle?.length) {
         s.bundle.forEach(sub => { if (sub.state === 'pending') sub.state = 'accepted' })
         s.state = 'accepted'
@@ -304,18 +294,15 @@ export async function PATCH(req) {
   } else if (action === 'veto') {
     slots[slotIndex].state = 'vetoed'
     if (reason) slots[slotIndex].veto_reason = reason
-    // Push back: move the linked task to a future date
     if (pushback_date && slots[slotIndex].taskId) {
       await supabaseAdmin.from('tasks').update({ date: pushback_date }).eq('id', slots[slotIndex].taskId).eq('user_id', userId)
       slots[slotIndex].pushed_to = pushback_date
     }
-    // Impact assessment runs in background — response returns immediately
   } else if (action === 'edit') {
     if (label !== undefined) slots[slotIndex].label = label
     if (time !== undefined) slots[slotIndex].time = time
     if (note !== undefined) slots[slotIndex].note = note
     if (duration_blocks !== undefined) slots[slotIndex].duration_blocks = duration_blocks
-    // Sync duration + label back to the linked task record
     if (slots[slotIndex].taskId) {
       const taskUpdates = {}
       if (duration_blocks !== undefined) taskUpdates.blocks = duration_blocks
@@ -325,7 +312,6 @@ export async function PATCH(req) {
     }
   }
 
-  // Recompute COO score after every slot state change (bundles score at subtask level)
   const taskSlotsFinal = slots.filter(s => !['break','lunch','free','event','optional_tonight'].includes(s.type))
   let acceptedFinal = 0, vetoedFinal = 0
   for (const s of taskSlotsFinal) {
@@ -344,7 +330,6 @@ export async function PATCH(req) {
 
   await supabaseAdmin.from('schedules').update({ slots, coo_score: cooScore }).eq('user_id', userId).eq('date', schedDate)
 
-  // Background impact assessment for vetoes (non-blocking — client gets response first)
   if (action === 'veto') {
     const vi = slotIndex
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', schedDate)
