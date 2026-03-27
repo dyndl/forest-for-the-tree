@@ -65,7 +65,7 @@ export async function POST(req) {
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = session.user.email
-  const body = await req.json()
+  const { goals: _excludeGoals, ...body } = await req.json()
 
   const { data, error } = await supabaseAdmin
     .from('user_context')
@@ -138,13 +138,18 @@ export async function PATCH(req) {
     .eq('user_id', userId)
     .single()
 
+  // goals is owned exclusively by /api/goals — never let a settings write overwrite it
+  const { goals: _excludeGoals, ...safeUpdates } = updates
+
   const merged = {
     ...(current || DEFAULTS),
-    ...updates,
+    ...safeUpdates,
+    // goals must come from current only — never from the update payload
+    goals: current?.goals ?? [],
     // Arrays merge rather than replace
-    adhd_patterns:  [...new Set([...(current?.adhd_patterns  || []), ...(updates.adhd_patterns  || [])])],
-    known_blockers: [...new Set([...(current?.known_blockers || []), ...(updates.known_blockers || [])])],
-    voice_keyterms: [...new Set([...(current?.voice_keyterms || []), ...(updates.voice_keyterms || [])])],
+    adhd_patterns:  [...new Set([...(current?.adhd_patterns  || []), ...(safeUpdates.adhd_patterns  || [])])],
+    known_blockers: [...new Set([...(current?.known_blockers || []), ...(safeUpdates.known_blockers || [])])],
+    voice_keyterms: [...new Set([...(current?.voice_keyterms || []), ...(safeUpdates.voice_keyterms || [])])],
     updated_at: new Date().toISOString(),
   }
 

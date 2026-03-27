@@ -5,6 +5,7 @@ import { generateMorningBriefWithOura, assessVetoImpact, gatherAgentContribution
 import { getTodayEvents, getImportantEmails } from '@/lib/google'
 import { getOuraMorningContext, refreshOuraToken } from '@/lib/oura'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 function buildVetoHistory(schedules) {
