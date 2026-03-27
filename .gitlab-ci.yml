@@ -32,7 +32,7 @@ mirror_beta:
   script:
     - echo "Mirroring beta → GitHub beta + main (Vercel production)..."
     - git push github HEAD:refs/heads/beta --force
-    - git push github HEAD:refs/heads/main --force
+    - git push github HEAD:refs/heads/main
     - echo "✓ GitHub beta + main updated (commit $CI_COMMIT_SHORT_SHA)"
 
 # ── Stable mirror — manual trigger only, pushes to GitHub main ───────────────
