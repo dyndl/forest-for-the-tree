@@ -17,7 +17,6 @@ stages:
 # ── Shared mirror script ──────────────────────────────────────────────────────
 .mirror_base:
   stage: mirror
-  image: alpine/git:latest
   before_script:
     - git config --global user.email "ci@forestforthetrees.app"
     - git config --global user.name "Forest CI"
