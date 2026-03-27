@@ -55,12 +55,17 @@ export async function POST(req) {
     const areasToSeed = uncoveredAreas.length > 0 && existing.length > 0 ? uncoveredAreas : lifeAreas
     const existingGoalCategories = existing.length > 0 ? [...coveredCategories] : []
 
+    const llmKeys = {
+      anthropicKey: ctx?.anthropic_api_key || null,
+      geminiKey: ctx?.gemini_api_key || null,
+    }
     const proposed = await proposeInitialGoals({
       outline: ctx?.outline || '',
       roadmap: ctx?.roadmap || '',
       lifeAreas: areasToSeed,
       emailContext,
       existingGoalCategories,
+      llmKeys,
     })
     if (!proposed.length) return Response.json({ goals: existing, seeded: false })
 
@@ -107,7 +112,11 @@ export async function POST(req) {
     .from('user_context').select('goals, outline, roadmap, life_areas, adhd_aware')
     .eq('user_id', userId).maybeSingle()
 
-  const structure = await structureGoal({ title, description, target_date, userCtx: ctx })
+  const llmKeys = {
+    anthropicKey: ctx?.anthropic_api_key || null,
+    geminiKey: ctx?.gemini_api_key || null,
+  }
+  const structure = await structureGoal({ title, description, target_date, userCtx: ctx, llmKeys })
 
   const newGoal = {
     id: `goal_${Date.now()}`,

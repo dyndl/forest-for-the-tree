@@ -44,12 +44,19 @@ export async function POST(req) {
     return Response.json({ ok })
   }
 
-  const { data: cached } = await supabaseAdmin.from('relationship_cache').select('*').eq('user_id', userId).single()
+  const [{ data: cached }, { data: userCtx }] = await Promise.all([
+    supabaseAdmin.from('relationship_cache').select('*').eq('user_id', userId).single(),
+    supabaseAdmin.from('user_context').select('gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle(),
+  ])
   const contacts = cached?.contacts || []
   const overdueContacts = cached?.overdue || getOverdueContacts(contacts)
   const upcomingBirthdays = cached?.birthdays || getUpcomingBirthdays(contacts)
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
 
-  const result = await generateRelationshipBrief({ contacts, overdueContacts, upcomingBirthdays, userMessage, weeklyCheckin: weekly || false })
+  const result = await generateRelationshipBrief({ contacts, overdueContacts, upcomingBirthdays, userMessage, weeklyCheckin: weekly || false, llmKeys })
 
   await supabaseAdmin.from('relationship_briefs').upsert(
     { user_id: userId, date: new Date().toISOString().slice(0,10), brief: result, weekly: weekly||false, created_at: new Date().toISOString() },

@@ -72,9 +72,13 @@ export async function POST(req) {
 
   const [tasks, userCtxRow] = await Promise.all([
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey()).then(r => r.data || []),
-    supabaseAdmin.from('user_context').select('goals').eq('user_id', userId).single().then(r => r.data),
+    supabaseAdmin.from('user_context').select('goals, gemini_api_key, anthropic_api_key').eq('user_id', userId).single().then(r => r.data),
   ])
   const goals = userCtxRow?.goals || []
+  const llmKeys = {
+    anthropicKey: userCtxRow?.anthropic_api_key || null,
+    geminiKey: userCtxRow?.gemini_api_key || null,
+  }
 
   // Pull agent context (uploaded voice memos, files, notes)
   const { data: contextRows } = await supabaseAdmin
@@ -99,7 +103,7 @@ export async function POST(req) {
   // Mark thinking
   await supabaseAdmin.from('agents').update({ status: 'thinking' }).eq('id', agentId).eq('user_id', userId)
 
-  const result = await runAgentBrief({ agent: augmentedAgent, tasks, goals, isSilent: silent })
+  const result = await runAgentBrief({ agent: augmentedAgent, tasks, goals, isSilent: silent, llmKeys })
 
   const updates = {
     status: result.urgent ? 'alert' : 'ok',

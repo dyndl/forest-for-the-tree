@@ -123,6 +123,11 @@ async function runMorning(userId) {
     } catch (e) { console.error('Oura error:', e.message) }
   }
 
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
+
   const plan = await generateMorningBriefWithOura({
     tasks, calendarEvents, emails,
     roadmap: userCtx?.roadmap,
@@ -131,6 +136,7 @@ async function runMorning(userId) {
     currentHour: localHour,
     localDate,
     localTomorrow,
+    llmKeys,
   })
 
   if (!plan) return { ok: false, error: 'Plan generation failed' }
@@ -154,6 +160,7 @@ async function runMorning(userId) {
     outline: userCtx?.outline || '',
     lifeAreas: userCtx?.life_areas || [],
     adhdAware: userCtx?.adhd_aware || false,
+    llmKeys,
   }).then(proposals => {
     if (proposals?.length) {
       return supabaseAdmin.from('user_context')
@@ -182,9 +189,13 @@ async function runAgents(userId) {
   const agents = (await supabaseAdmin.from('agents').select('*').eq('user_id', userId)).data || []
   const tasks = (await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', todayKey())).data || []
   const alerts = []
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
 
   await Promise.all(agents.map(async (agent) => {
-    const result = await runAgentBrief({ agent, tasks, isSilent: true })
+    const result = await runAgentBrief({ agent, tasks, isSilent: true, llmKeys })
     await supabaseAdmin.from('agents').update({
       status: result.urgent ? 'alert' : 'ok',
       alert: result.alert || '',
@@ -215,7 +226,11 @@ async function runWeekly(userId) {
     supabaseAdmin.from('retros').select('*').eq('user_id', userId).gte('date', weekAgo).then(r => r.data || []),
   ])
 
-  const digest = await generateWeeklyReview({ weekTasks, roadmap: userCtx?.roadmap || '' })
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
+  const digest = await generateWeeklyReview({ weekTasks, roadmap: userCtx?.roadmap || '', llmKeys })
   if (!digest) return { ok: false, error: 'digest generation failed' }
 
   // Monday of this week
@@ -263,7 +278,11 @@ async function runJobDigest(userId) {
     } catch (e) { console.error('getJobBacklogEmails error:', e.message) }
   }
 
-  const digest = await generateJobDigest({ emails, userCtx })
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
+  const digest = await generateJobDigest({ emails, userCtx, llmKeys })
   if (!digest) return { ok: false, error: 'job digest generation failed' }
 
   const today = todayKey()
@@ -280,7 +299,7 @@ async function runJobDigest(userId) {
 }
 
 async function runRelationships(userId) {
-  const { tokenRow } = await getTokenAndContext(userId)
+  const { tokenRow, userCtx } = await getTokenAndContext(userId)
   if (!tokenRow?.access_token) return { ok: false, error: 'No token' }
 
   const contacts = await getRelationshipContacts(tokenRow.access_token, tokenRow.refresh_token)
@@ -292,9 +311,13 @@ async function runRelationships(userId) {
     { onConflict: 'user_id' }
   )
 
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
   const result = await generateRelationshipBrief({
     contacts, overdueContacts: overdue, upcomingBirthdays: birthdays,
-    userMessage: 'Weekly Sunday review', weeklyCheckin: true,
+    userMessage: 'Weekly Sunday review', weeklyCheckin: true, llmKeys,
   })
 
   await supabaseAdmin.from('relationship_briefs').upsert(

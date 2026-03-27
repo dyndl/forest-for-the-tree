@@ -83,9 +83,13 @@ export async function POST(req) {
         const vetoHistory = buildVetoHistory(recentScheds)
 
         const goals = userCtx?.goals || []
+        const llmKeys = {
+          anthropicKey: userCtx?.anthropic_api_key || null,
+          geminiKey: userCtx?.gemini_api_key || null,
+        }
         // Cap agent contributions at 4s — a slow/missing API key must not hang the whole request
         const agentContributions = await Promise.race([
-          gatherAgentContributions({ agents: agentRows, goals, tasks, roadmap: body.roadmap || userCtx?.roadmap, userCtx }),
+          gatherAgentContributions({ agents: agentRows, goals, tasks, roadmap: body.roadmap || userCtx?.roadmap, userCtx, llmKeys }),
           new Promise(resolve => setTimeout(() => resolve(''), 4000)),
         ])
 
@@ -131,7 +135,7 @@ export async function POST(req) {
           localDate: localToday, localTomorrow,
           vetoHistory, agentContributions,
           overdueTasks: overdueTasksData,
-          stream: true,
+          stream: true, llmKeys,
         })
 
         let raw = ''
@@ -333,7 +337,7 @@ export async function PATCH(req) {
   if (action === 'veto') {
     const vi = slotIndex
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', schedDate)
-      .then(r => assessVetoImpact({ vetoedSlot: slots[vi], remainingSlots: slots, tasks: r.data || [] }))
+      .then(r => assessVetoImpact({ vetoedSlot: slots[vi], remainingSlots: slots, tasks: r.data || [], llmKeys: {} }))
       .then(impact => {
         if (!impact) return
         const updated = slots.map((s, i) => i === vi ? { ...s, impact: impact.impact, suggestion: impact.suggestion, severity: impact.severity } : s)

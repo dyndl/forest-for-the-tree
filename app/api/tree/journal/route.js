@@ -27,7 +27,7 @@ export async function POST(req) {
   if (existing) return Response.json({ journal: existing })
 
   // Gather materials in parallel
-  const [{ data: chatLogs }, { data: recentTasks }, { data: sp }] = await Promise.all([
+  const [{ data: chatLogs }, { data: recentTasks }, { data: sp }, { data: userCtx }] = await Promise.all([
     supabaseAdmin.from('chat_logs').select('role, content, created_at')
       .eq('user_id', userId).eq('tier_at', from_tier)
       .order('created_at', { ascending: true }).limit(50),
@@ -35,7 +35,12 @@ export async function POST(req) {
       .eq('user_id', userId).eq('done', true)
       .order('created_at', { ascending: false }).limit(50),
     supabaseAdmin.from('tree_species').select('longest_streak, current_streak').eq('user_id', userId).maybeSingle(),
+    supabaseAdmin.from('user_context').select('gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle(),
   ])
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
 
   const stats = {
     tasks_done: recentTasks?.length || 0,

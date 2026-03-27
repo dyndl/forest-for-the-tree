@@ -25,7 +25,7 @@ export async function POST(req) {
   const today = todayKey()
 
   const [ctxRes, tasksRes, tokenRes] = await Promise.all([
-    supabaseAdmin.from('user_context').select('roadmap,outline,life_areas,adhd_aware,integration_tier').eq('user_id', userId).maybeSingle(),
+    supabaseAdmin.from('user_context').select('roadmap,outline,life_areas,adhd_aware,integration_tier,gemini_api_key,anthropic_api_key').eq('user_id', userId).maybeSingle(),
     supabaseAdmin.from('tasks').select('id,name,q,cat,blocks,done').eq('user_id', userId).eq('date', today),
     supabaseAdmin.from('user_tokens').select('access_token,refresh_token').eq('user_id', userId).maybeSingle(),
   ])
@@ -66,12 +66,17 @@ export async function POST(req) {
     await supabaseAdmin.from('tasks').insert(urgentEmailTasks)
   }
 
+  const llmKeys = {
+    anthropicKey: ctx.anthropic_api_key || null,
+    geminiKey: ctx.gemini_api_key || null,
+  }
   const proposals = await generateTaskProposals({
     emails, calendarEvents, tasks,
     roadmap: ctx.roadmap || '',
     outline: ctx.outline || '',
     lifeAreas: ctx.life_areas || [],
     adhdAware: ctx.adhd_aware || false,
+    llmKeys,
   })
 
   await supabaseAdmin.from('user_context').update({ background_proposals: proposals, updated_at: new Date().toISOString() }).eq('user_id', userId)

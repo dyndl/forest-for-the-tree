@@ -33,7 +33,7 @@ export async function POST(req) {
 
   const [tokenRow, userCtxRow] = await Promise.all([
     supabaseAdmin.from('user_tokens').select('access_token,refresh_token').eq('user_id', userId).maybeSingle().then(r => r.data),
-    supabaseAdmin.from('user_context').select('roadmap').eq('user_id', userId).maybeSingle().then(r => r.data),
+    supabaseAdmin.from('user_context').select('roadmap, gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle().then(r => r.data),
   ])
 
   let emails = []
@@ -41,7 +41,11 @@ export async function POST(req) {
     try { emails = await getJobBacklogEmails(tokenRow.access_token, tokenRow.refresh_token) } catch {}
   }
 
-  const digest = await generateJobDigest({ emails, userCtx: userCtxRow })
+  const llmKeys = {
+    anthropicKey: userCtxRow?.anthropic_api_key || null,
+    geminiKey: userCtxRow?.gemini_api_key || null,
+  }
+  const digest = await generateJobDigest({ emails, userCtx: userCtxRow, llmKeys })
   if (!digest) return Response.json({ error: 'digest failed' }, { status: 500 })
 
   const today = todayKey()

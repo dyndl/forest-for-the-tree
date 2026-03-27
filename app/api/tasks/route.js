@@ -80,7 +80,9 @@ export async function POST(req) {
     // Enrich notes only for manual tasks with no pre-filled notes
     if (!task.notes && task.source === 'manual') {
       try {
-        const enriched = await enrichTaskNotes({ taskName: task.name, emails, calendarEvents })
+        const { data: userCtxMin } = await supabaseAdmin.from('user_context').select('gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle()
+        const llmKeys = { anthropicKey: userCtxMin?.anthropic_api_key || null, geminiKey: userCtxMin?.gemini_api_key || null }
+        const enriched = await enrichTaskNotes({ taskName: task.name, emails, calendarEvents, llmKeys })
         if (enriched.note || enriched.source_ref) {
           const notes = enriched.note && enriched.source_ref
             ? `${enriched.note}\n\nSource: ${enriched.source_ref}`

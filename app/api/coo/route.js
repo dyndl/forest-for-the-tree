@@ -21,15 +21,19 @@ export async function POST(req) {
     supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', todayKey()).maybeSingle().then(r => r.data),
     supabaseAdmin.from('user_context').select('*').eq('user_id', userId).maybeSingle().then(r => r.data),
   ])
+  const llmKeys = {
+    anthropicKey: userCtx?.anthropic_api_key || null,
+    geminiKey: userCtx?.gemini_api_key || null,
+  }
 
   const roadmap = userCtx?.roadmap || 'No roadmap set yet'
   let result
 
   if (type === 'midday' || type === 'afternoon') {
-    result = await generateCheckin({ type, tasks, schedule, userMessage })
+    result = await generateCheckin({ type, tasks, schedule, userMessage, llmKeys })
   } else if (type === 'evening') {
     const incompleteTasks = tasks.filter(t => !t.done && t.status !== 'wont_do')
-    result = await generateEveningRetro({ tasks, schedule, roadmap, incompleteTasks })
+    result = await generateEveningRetro({ tasks, schedule, roadmap, incompleteTasks, llmKeys })
 
     // Store retro
     await supabaseAdmin.from('retros').upsert(
@@ -38,7 +42,7 @@ export async function POST(req) {
     )
 
     // COO memory write-back — extract patterns and store
-    const patterns = await extractAndStorePatterns({ retroResult: result, userId })
+    const patterns = await extractAndStorePatterns({ retroResult: result, userId, llmKeys })
     if (patterns) {
       const existing = userCtx?.coo_notes || ''
       const newNote = patterns.coo_note || ''
@@ -59,13 +63,13 @@ export async function POST(req) {
   } else if (type === 'weekly') {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
-    result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap })
+    result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap, llmKeys })
   } else if (type === 'weekly_feedback') {
     // User responded to weekly digest — update final_message + clear pending flag
     const { digestId, feedback } = body
     const { data: digestRow } = await supabaseAdmin.from('weekly_digests').select('*').eq('id', digestId).eq('user_id', userId).maybeSingle()
     if (digestRow) {
-      const fb = await generateWeeklyFeedback({ digest: digestRow.digest, userFeedback: feedback })
+      const fb = await generateWeeklyFeedback({ digest: digestRow.digest, userFeedback: feedback, llmKeys })
       const finalMessage = fb?.final_message || feedback
       await supabaseAdmin.from('weekly_digests').update({ user_feedback: feedback, final_message: finalMessage }).eq('id', digestId)
       await supabaseAdmin.from('user_context').update({ pending_weekly_digest: false, updated_at: new Date().toISOString() }).eq('user_id', userId)
@@ -75,7 +79,7 @@ export async function POST(req) {
     }
   } else if (type === 'parse_done') {
     const lifeAreas = userCtx?.life_areas || []
-    result = await parseDoneList({ text: userMessage, lifeAreas, userCtx })
+    result = await parseDoneList({ text: userMessage, lifeAreas, userCtx, llmKeys })
   } else if (type === 'delegate') {
     // Delegation plan — COO generates execution plan for user sign-off
     let emails = [], calendarEvents = []
@@ -89,9 +93,9 @@ export async function POST(req) {
       } catch {}
     }
     const goals = delegateGoals || userCtx?.goals || []
-    result = await generateDelegationPlan({ task: delegateTask || {}, goals, userCtx, emails, calendarEvents })
+    result = await generateDelegationPlan({ task: delegateTask || {}, goals, userCtx, emails, calendarEvents, llmKeys })
   } else if (type === 'autocomplete') {
-    result = await generateChatAutocomplete({ partialMessage: userMessage, tasks, schedule })
+    result = await generateChatAutocomplete({ partialMessage: userMessage, tasks, schedule, llmKeys })
   } else {
     // Free-form chat — fetch live email + calendar context so the COO can reference them
     let emails = [], calendarEvents = []
@@ -104,7 +108,7 @@ export async function POST(req) {
         ])
       } catch {}
     }
-    result = await generateChatResponse({ userMessage, tasks, schedule, userCtx, emails, calendarEvents })
+    result = await generateChatResponse({ userMessage, tasks, schedule, userCtx, emails, calendarEvents, llmKeys })
 
     // Persist chat exchange to chat_logs for tier journal generation
     const cooMsg = result?.message || result?.headline || ''
