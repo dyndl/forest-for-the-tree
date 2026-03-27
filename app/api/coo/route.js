@@ -9,6 +9,7 @@ export const maxDuration = 30
 function todayKey() { return new Date().toISOString().slice(0, 10) }
 
 export async function POST(req) {
+  try {
   const session = await getServerSession(authOptions)
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -123,4 +124,8 @@ export async function POST(req) {
   }
 
   return Response.json({ result })
+  } catch (e) {
+    console.error('[/api/coo] unhandled error:', e)
+    return Response.json({ error: e?.message || 'COO unavailable' }, { status: 500 })
+  }
 }
