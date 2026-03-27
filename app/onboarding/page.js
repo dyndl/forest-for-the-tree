@@ -3,7 +3,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 
-const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'whisper', 'relationships', 'done']
+const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'whisper', 'relationships', 'ai_connect', 'done']
 const ADDON_STEPS = { oura: 'oura', whisper: 'whisper' } // deepgram has no setup step — app holds the key
 
 // ── Suggested life area starting points (user can edit/remove/add freely) ────
@@ -1083,6 +1083,74 @@ function WhisperStep({ onNext, onBack, onSkip }) {
   )
 }
 
+// ══ STEP 6d: AI CONNECT ═════════════════════════════════════════════════════════
+function AiConnectStep({ data, onChange, onNext, onBack }) {
+  const [geminiDraft, setGeminiDraft] = useState(data.gemini_api_key || '')
+  const [anthropicDraft, setAnthropicDraft] = useState(data.anthropic_api_key || '')
+
+  function handleNext() {
+    if (geminiDraft.trim()) onChange('gemini_api_key', geminiDraft.trim())
+    if (anthropicDraft.trim()) onChange('anthropic_api_key', anthropicDraft.trim())
+    onNext()
+  }
+
+  const hasKey = geminiDraft.trim() || anthropicDraft.trim()
+  return (
+    <div>
+      <div style={{ fontSize: 28, textAlign: 'center', marginBottom: 8 }}>✨</div>
+      <h2 style={{ ...serif, fontSize: 20, color: '#182e22', marginBottom: 4, fontStyle: 'italic', textAlign: 'center' }}>
+        Upgrade your AI
+      </h2>
+      <p style={{ fontSize: 12, color: '#7aaa8a', marginBottom: 16, lineHeight: 1.6, textAlign: 'center' }}>
+        Your Forest is already running with the built-in AI. Add a free key for sharper, more personalised plans — or skip and add one later in Settings.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+        {/* Gemini */}
+        <div style={{ padding: '12px 14px', background: 'rgba(26,90,60,0.05)', border: '1px solid rgba(26,90,60,0.12)', borderRadius: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#182e22' }}>🔵 Gemini (Google)</span>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#0f6e56', background: 'rgba(15,110,86,0.1)', padding: '2px 7px', borderRadius: 10 }}>Free · no card</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#7aaa8a', lineHeight: 1.5, marginBottom: 8 }}>
+            Get a free key at aistudio.google.com — no credit card required.
+          </div>
+          <input
+            value={geminiDraft}
+            onChange={e => setGeminiDraft(e.target.value)}
+            placeholder="AIza… (paste key here)"
+            type="password"
+            style={{ ...inputStyle, marginTop: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+          />
+        </div>
+
+        {/* Anthropic */}
+        <div style={{ padding: '12px 14px', background: 'rgba(26,90,60,0.05)', border: '1px solid rgba(26,90,60,0.12)', borderRadius: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#182e22' }}>🟣 Claude (Anthropic)</span>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#5a3a9a', background: 'rgba(90,58,154,0.1)', padding: '2px 7px', borderRadius: 10 }}>Premium</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#7aaa8a', lineHeight: 1.5, marginBottom: 8 }}>
+            Already on Anthropic? Use your own key for the highest quality plans.
+          </div>
+          <input
+            value={anthropicDraft}
+            onChange={e => setAnthropicDraft(e.target.value)}
+            placeholder="sk-ant-… (paste key here)"
+            type="password"
+            style={{ ...inputStyle, marginTop: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+          />
+        </div>
+      </div>
+
+      <button style={btnPrimary} onClick={handleNext}>
+        {hasKey ? 'Save & continue →' : 'Maybe later →'}
+      </button>
+      <button style={btnGhost} onClick={onBack}>Back</button>
+    </div>
+  )
+}
+
 // ══ STEP 6c: RELATIONSHIPS ══════════════════════════════════════════════════════
 function RelationshipsStep({ data, onChange, onNext, onBack }) {
   return (
@@ -1563,6 +1631,7 @@ function OnboardingPage() {
           {step === 'oura'          && <OuraStep          onNext={next} onBack={back} onSkip={next} initialStatus={ouraStatus} />}
           {step === 'whisper'       && <WhisperStep       onNext={next} onBack={back} onSkip={next} />}
           {step === 'relationships' && <RelationshipsStep data={formData} onChange={set} onNext={next} onBack={back} />}
+          {step === 'ai_connect'   && <AiConnectStep    data={formData} onChange={set} onNext={next} onBack={back} />}
           {step === 'done'          && <DoneStep          onFinish={finish} saving={saving} saveError={saveError} />}
 
           {/* Start over — shown on all steps except done, and not in refresh mode */}

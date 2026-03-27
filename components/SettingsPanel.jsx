@@ -509,6 +509,66 @@ export default function SettingsPanel() {
         </button>
       </Section>
 
+      {/* ── AI INTELLIGENCE ── */}
+      <Section title="AI intelligence">
+        {(() => {
+          const tier = settings?.anthropic_api_key ? 'claude' : settings?.gemini_api_key ? 'gemini' : 'standard'
+          const geminiMasked = settings?.gemini_api_key ? '••••' + settings.gemini_api_key.slice(-4) : null
+          const anthropicMasked = settings?.anthropic_api_key ? '••••' + settings.anthropic_api_key.slice(-4) : null
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <span style={{ ...mono, fontSize: 9, color: '#7aaa8a' }}>Active AI:</span>
+                <span style={{ ...mono, fontSize: 9, color: '#0f6e56', fontWeight: 600 }}>
+                  {tier === 'claude' ? '🟣 Claude (premium)' : tier === 'gemini' ? '🔵 Gemini (free)' : '⚡ Standard (built-in)'}
+                </span>
+              </div>
+              <p style={{ fontSize: 11.5, color: '#3a5c47', marginBottom: 12, lineHeight: 1.6 }}>
+                The built-in AI works out of the box. Add a free Gemini key for sharper plans, or your Anthropic key for the highest quality.
+              </p>
+
+              {/* Gemini */}
+              <div style={{ padding: '10px 12px', background: 'rgba(26,90,60,0.04)', border: '1px solid rgba(26,90,60,0.12)', borderRadius: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#182e22' }}>🔵 Gemini (Google) — free</span>
+                  {tier === 'gemini' && <span style={{ ...mono, fontSize: 9, color: '#0f6e56' }}>active</span>}
+                </div>
+                <div style={{ ...mono, fontSize: 9, color: '#9ab8a8', marginBottom: 8 }}>aistudio.google.com/app/apikey · no credit card</div>
+                {geminiMasked ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ ...mono, fontSize: 11, color: '#3a5c47', flex: 1 }}>{geminiMasked}</span>
+                    <button onClick={() => set('gemini_api_key', null)} style={{ background: 'transparent', border: '1px solid rgba(138,40,40,0.3)', borderRadius: 5, padding: '3px 8px', fontSize: 11, color: '#8a2828', cursor: 'pointer', fontFamily: 'Figtree, sans-serif' }}>Remove</button>
+                  </div>
+                ) : (
+                  <input value={settings?.gemini_api_key || ''} onChange={e => set('gemini_api_key', e.target.value || null)}
+                    placeholder="AIza…" type="password"
+                    style={{ ...inputStyle, marginTop: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }} />
+                )}
+              </div>
+
+              {/* Anthropic */}
+              <div style={{ padding: '10px 12px', background: 'rgba(26,90,60,0.04)', border: '1px solid rgba(26,90,60,0.12)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#182e22' }}>🟣 Claude (Anthropic) — premium</span>
+                  {tier === 'claude' && <span style={{ ...mono, fontSize: 9, color: '#0f6e56' }}>active</span>}
+                </div>
+                <div style={{ ...mono, fontSize: 9, color: '#9ab8a8', marginBottom: 8 }}>console.anthropic.com · use your existing account</div>
+                {anthropicMasked ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ ...mono, fontSize: 11, color: '#3a5c47', flex: 1 }}>{anthropicMasked}</span>
+                    <button onClick={() => set('anthropic_api_key', null)} style={{ background: 'transparent', border: '1px solid rgba(138,40,40,0.3)', borderRadius: 5, padding: '3px 8px', fontSize: 11, color: '#8a2828', cursor: 'pointer', fontFamily: 'Figtree, sans-serif' }}>Remove</button>
+                  </div>
+                ) : (
+                  <input value={settings?.anthropic_api_key || ''} onChange={e => set('anthropic_api_key', e.target.value || null)}
+                    placeholder="sk-ant-…" type="password"
+                    style={{ ...inputStyle, marginTop: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }} />
+                )}
+              </div>
+            </div>
+          )
+        })()}
+      </Section>
+
       <Section title="Account">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(45,122,82,0.12)', border: '1px solid rgba(45,122,82,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 500, color: '#1a5a3c', flexShrink: 0 }}>

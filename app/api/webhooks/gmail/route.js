@@ -127,13 +127,18 @@ async function scanUrgentJobEmails(userId, tokenRow, messageIds) {
 
 async function runAgentChecks(userId, tokenRow) {
   const today  = new Date().toISOString().slice(0, 10)
-  const [agents, tasks] = await Promise.all([
+  const [agents, tasks, userCtxRow] = await Promise.all([
     supabaseAdmin.from('agents').select('*').eq('user_id', userId).then(r => r.data || []),
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', today).then(r => r.data || []),
+    supabaseAdmin.from('user_context').select('gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle().then(r => r.data),
   ])
+  const llmKeys = {
+    anthropicKey: userCtxRow?.anthropic_api_key || null,
+    geminiKey: userCtxRow?.gemini_api_key || null,
+  }
 
   for (const agent of agents) {
-    const result = await runAgentBrief({ agent, tasks, isSilent: true })
+    const result = await runAgentBrief({ agent, tasks, isSilent: true, llmKeys })
     await supabaseAdmin.from('agents').update({
       status:   result.urgent ? 'alert' : 'ok',
       alert:    result.alert || '',

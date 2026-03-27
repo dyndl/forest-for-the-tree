@@ -55,6 +55,7 @@ export async function POST(req) {
     species,
     emoji,
     stats,
+    llmKeys,
   })
 
   if (!journal) return Response.json({ error: 'Journal generation failed' }, { status: 500 })
