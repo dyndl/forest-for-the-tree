@@ -388,6 +388,17 @@ function matchesHorizon(task,h){
   if(h==='month')return task.date>=td&&task.date<=endOfMonth()
   return true
 }
+function slotIsPast(schedDate,slotTime){
+  if(!schedDate||!slotTime)return false
+  const m=slotTime.match(/^(\d+):(\d+)\s+(AM|PM)$/i)
+  if(!m)return false
+  let h=parseInt(m[1]);const mer=m[3].toUpperCase()
+  if(mer==='PM'&&h!==12)h+=12;if(mer==='AM'&&h===12)h=0
+  const now=new Date();const todayISO=now.toISOString().slice(0,10)
+  if(schedDate<todayISO)return true
+  if(schedDate===todayISO)return h*60+parseInt(m[2])<now.getHours()*60+now.getMinutes()
+  return false
+}
 
 function getSchedRange(h){
   const today=new Date();const d0=today.toISOString().slice(0,10)
@@ -534,6 +545,12 @@ export default function App(){
 
   // Auto-clear undo toast after 5s
   useEffect(()=>{if(!undoInfo)return;const t=setTimeout(()=>setUndoInfo(null),5000);return()=>clearTimeout(t)},[undoInfo])
+  // Scroll veto panel into view when opened — it expands below the clicked slot inside a height-clipped container
+  useEffect(()=>{
+    if(!vetoPanel)return
+    const t=setTimeout(()=>document.querySelector('[data-veto-panel]')?.scrollIntoView({behavior:'smooth',block:'nearest'}),80)
+    return()=>clearTimeout(t)
+  },[vetoPanel])
 
   // Load 30-day done history when Done list tab first opens
   useEffect(()=>{
@@ -2000,6 +2017,27 @@ export default function App(){
                     }
                   </div>
                 </div>
+                {(()=>{
+                  const pastPending=(schedule.slots||[]).reduce((acc,s,i)=>{
+                    if(slotIsPast(schedule.date,s.time)&&(s.state==='pending'||s.state==='optional')&&s.type!=='break'&&s.type!=='lunch'&&s.type!=='free')acc.push({s,i})
+                    return acc
+                  },[])
+                  if(!pastPending.length)return null
+                  return<div style={{padding:'11px 13px',background:'rgba(26,90,60,.05)',border:'1px solid rgba(26,90,60,.22)',borderRadius:'var(--r2)'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                      <div style={{fontFamily:'var(--m)',fontSize:12,color:'var(--acc)',fontWeight:600}}>⏱ {pastPending.length} past slot{pastPending.length!==1?'s':''} need review</div>
+                      <div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)'}}>mark ✓ done or ✗ skip below</div>
+                    </div>
+                    {pastPending.map(({s,i},n)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:n>0?'1px solid rgba(26,90,60,.1)':'none'}}>
+                        <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flexShrink:0,width:52,textAlign:'right'}}>{s.time}</span>
+                        <span style={{flex:1,fontSize:13,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label}</span>
+                        <button onClick={()=>acceptSlot(i)} style={{padding:'2px 9px',borderRadius:4,border:'1px solid rgba(15,110,86,.35)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',fontWeight:500,flexShrink:0,whiteSpace:'nowrap'}}>✓ {s.type==='event'?'Went':'Done'}</button>
+                        <button onClick={()=>openVetoPanel(i)} style={{padding:'2px 8px',borderRadius:4,border:'1px solid rgba(184,92,0,.3)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>✗ Skip</button>
+                      </div>
+                    ))}
+                  </div>
+                })()}
                 <div className="card" style={{display:'flex',flexDirection:'column',maxHeight:'calc(100vh - 320px)',minHeight:0}}>
                   <div className="card-hdr" style={{flexShrink:0}}>
                     <div style={{display:'flex',alignItems:'baseline',gap:8}}>
@@ -2011,6 +2049,7 @@ export default function App(){
                   <div className="panel-scroll" style={{flex:1,minHeight:0,overflowY:'auto',padding:'10px 13px 24px',display:'flex',flexDirection:'column',gap:6}}>
                     {(schedule.slots||[]).map((slot,idx)=>{
                       const isTonight=slot.type==='optional_tonight'
+                      const isPast=slotIsPast(schedule?.date,slot.time)
                       const qv=slot.quadrant==='schedule'?'sch':slot.quadrant==='eliminate'?'eli':slot.quadrant
                       let bg='rgba(255,255,255,.3)',bd='var(--gb2)'
                       if(isTonight){bg='rgba(90,72,140,.07)';bd='rgba(90,72,140,.22)'}
@@ -2021,7 +2060,7 @@ export default function App(){
                           {isTonight&&<div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 0 4px',fontFamily:'var(--m)',fontSize:11,color:'rgba(90,72,140,.8)',letterSpacing:'.08em'}}>🌙 optional tonight — light tasks only, not required</div>}
                           <div style={{display:'flex',alignItems:'stretch',gap:8,minHeight:44}}>
                             <div style={{fontFamily:'var(--m)',fontSize:'11.5px',color:'var(--txt3)',width:42,flexShrink:0,paddingTop:9,textAlign:'right'}}>{slot.time}</div>
-                            <div style={{width:1,background:'var(--gb2)',flexShrink:0,position:'relative'}}><div style={{position:'absolute',top:10,left:-3,width:7,height:7,borderRadius:'50%',background:isTonight?'rgba(90,72,140,.3)':'var(--gb2)'}}/></div>
+                            <div style={{width:1,background:'var(--gb2)',flexShrink:0,position:'relative'}}><div style={{position:'absolute',top:10,left:-3,width:7,height:7,borderRadius:'50%',background:isTonight?'rgba(90,72,140,.3)':isPast&&(slot.state==='pending'||slot.state==='optional')?'rgba(184,92,0,.45)':'var(--gb2)'}}/></div>
                             <div style={{flex:1,borderRadius:'var(--r)',padding:'7px 10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:bg,border:`1px solid ${bd}`,opacity:slot.state==='vetoed'?.38:1}}>
                               <div style={{minWidth:0}}>
                                 <div style={{fontSize:14,color:'var(--txt)',textDecoration:slot.state==='vetoed'?'line-through':'none'}}>{slot.label}</div>
@@ -2029,6 +2068,7 @@ export default function App(){
                                 {slot.bundle?.length>0
                                   ?<div style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',marginTop:2}}>{slot.bundle.length} tasks · {slot.duration_blocks*15}min</div>
                                   :slot.duration_blocks&&<div style={{fontSize:11,color:'var(--txt3)',fontFamily:'var(--m)',marginTop:1}}>{slot.duration_blocks*15}min</div>}
+                                {isPast&&(slot.state==='pending'||slot.state==='optional')&&slot.type!=='break'&&slot.type!=='lunch'&&slot.type!=='free'&&<div style={{fontFamily:'var(--m)',fontSize:10.5,color:'rgba(184,92,0,.85)',marginTop:3}}>{slot.type==='event'?'Did you go?':'Did this happen?'} ↗</div>}
                               </div>
                               <div style={{display:'flex',gap:4,flexShrink:0}}>
                                 {slot.bundle?.length>0?(<>
@@ -2039,8 +2079,8 @@ export default function App(){
                                 </>):(<>
                                   {(slot.state==='pending'||slot.state==='optional')&&<>
                                     {slot.taskId&&<button onClick={()=>alreadyDoneSlot(idx)} title="Already done — accept + mark complete" style={{padding:'3px 7px',borderRadius:4,fontSize:11,cursor:'pointer',border:'1px solid rgba(15,110,86,.45)',background:'rgba(15,110,86,.18)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:600,whiteSpace:'nowrap'}}>✓ done</button>}
-                                    <button onClick={()=>acceptSlot(idx)} title="Accept this task" style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500}}>✓</button>
-                                    <button onClick={()=>openVetoPanel(idx)} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(184,92,0,.25)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontWeight:500}}>✗</button>
+                                    <button onClick={()=>acceptSlot(idx)} title={isPast?slot.type==='event'?'Mark as attended':'Mark as done':'Accept this slot'} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontWeight:500,whiteSpace:'nowrap'}}>{isPast&&slot.type==='event'?'✓ Went':'✓'}</button>
+                                    <button onClick={()=>openVetoPanel(idx)} title={isPast?'Didn\'t happen — reschedule or dismiss':'Veto / reschedule'} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid rgba(184,92,0,.25)',background:'rgba(184,92,0,.08)',color:'var(--do)',fontFamily:'var(--m)',fontWeight:500}}>✗</button>
                                     <button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11.5,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.5)',color:'var(--txt2)',fontFamily:'var(--m)'}}>✎</button>
                                   </>}
                                   {slot.state==='accepted'&&<><span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--ok)',padding:'3px 6px'}}>✓ accepted</span><button onClick={()=>setEditingSlot({idx,label:slot.label,time:slot.time||'',note:slot.note||'',blocks:slot.duration_blocks||2})} style={{padding:'3px 7px',borderRadius:4,fontSize:11,cursor:'pointer',border:'1px solid var(--gb2)',background:'rgba(255,255,255,.4)',color:'var(--txt3)',fontFamily:'var(--m)'}}>✎</button></>}
@@ -2079,14 +2119,14 @@ export default function App(){
                             </div>
                           </div>}
                           {/* Veto reason panel (non-bundle slots only) */}
-                          {vetoPanel?.idx===idx&&!slot.bundle?.length&&<div style={{display:'flex',gap:8,marginTop:3}}>
+                          {vetoPanel?.idx===idx&&!slot.bundle?.length&&<div data-veto-panel style={{display:'flex',gap:8,marginTop:3}}>
                             <div style={{width:50,flexShrink:0}}/>
                             <div style={{flex:1,padding:'9px 11px',background:'rgba(138,40,40,.04)',border:'1px solid rgba(138,40,40,.2)',borderRadius:6,marginLeft:8}}>
-                              <div style={{fontFamily:'var(--m)',fontSize:11,color:'#8a2828',marginBottom:6}}>Why skip this? <span style={{color:'var(--txt3)',fontWeight:400}}>(optional — COO learns from it)</span></div>
+                              <div style={{fontFamily:'var(--m)',fontSize:11,color:'#8a2828',marginBottom:6}}>{isPast?slot.type==='event'?'Didn\'t go?':'Didn\'t happen?':'Why skip this?'} <span style={{color:'var(--txt3)',fontWeight:400}}>(optional — COO learns from it)</span></div>
                               <textarea value={vetoReason} onChange={e=>setVetoReason(e.target.value)} rows={2} placeholder="Too tired · conflicts with a meeting · lower priority right now…" style={{width:'100%',background:'rgba(255,255,255,.75)',border:'1px solid rgba(138,40,40,.2)',borderRadius:5,color:'var(--txt)',fontSize:12.5,padding:'5px 8px',fontFamily:'var(--m)',resize:'none',outline:'none',lineHeight:1.5,boxSizing:'border-box'}}/>
                               <div style={{display:'flex',alignItems:'center',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                                <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flexShrink:0}}>Push back to:</span>
-                                {[['','Don\'t push back'],['tomorrow','Tomorrow'],['week','This week'],['month','This month']].map(([v,l])=>(
+                                <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flexShrink:0}}>{isPast?'Reschedule to:':'Push back to:'}</span>
+                                {[['','Dismiss'],['tomorrow','Tomorrow'],['week','This week'],['month','This month']].map(([v,l])=>(
                                   <button key={v} onClick={()=>setVetoPushback(v)} style={{padding:'3px 8px',borderRadius:4,fontSize:10.5,cursor:'pointer',border:`1px solid ${vetoPushback===v?'rgba(184,92,0,.45)':'var(--gb2)'}`,background:vetoPushback===v?'rgba(184,92,0,.12)':'transparent',color:vetoPushback===v?'var(--do)':'var(--txt3)',fontFamily:'var(--m)',whiteSpace:'nowrap'}}>{l}</button>
                                 ))}
                               </div>
