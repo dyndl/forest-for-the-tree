@@ -4,6 +4,11 @@ import { useEffect } from 'react'
 export default function GlobalError({ error, reset }) {
   useEffect(() => {
     console.error('[FFTREE] Uncaught error:', error)
+    // ChunkLoadError means the browser has a stale page from a previous deployment.
+    // reset() won't help — the chunk file is gone. Force a hard reload to fetch the new bundle.
+    if (error?.name === 'ChunkLoadError' || error?.message?.includes('Loading chunk')) {
+      window.location.reload()
+    }
   }, [error])
 
   return (
