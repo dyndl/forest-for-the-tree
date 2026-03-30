@@ -200,6 +200,9 @@ alter table user_context add column if not exists voice_keyterms jsonb default '
 alter table user_context add column if not exists background_proposals jsonb default '[]'::jsonb;
 alter table user_context add column if not exists relationship_seeds text default '';
 
+-- Timezone: IANA timezone string (e.g. 'America/New_York') — detected client-side on mount
+alter table user_context add column if not exists timezone text default null;
+
 -- MEDIA UPLOADS (voice memos, images, files)
 create table if not exists media_uploads (
   id text primary key,
