@@ -517,6 +517,7 @@ export default function App(){
   const [taskOrder,setTaskOrder]=useState([])
   const [dragOver,setDragOver]=useState(null)
   const [undoInfo,setUndoInfo]=useState(null)
+  const [llmWarning,setLlmWarning]=useState(null) // {msg, provider} — shown when a user key fails and Groq takes over
   const [schedAction,setSchedAction]=useState(null)
   const [schedManual,setSchedManual]=useState({date:'',time:''})
   const [schedActLoading,setSchedActLoading]=useState(false)
@@ -672,10 +673,11 @@ export default function App(){
       const localDate=now.toLocaleDateString('en-CA') // YYYY-MM-DD in local TZ
       const localTomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1).toLocaleDateString('en-CA')
       const statusLabels={fetching:'Reading your data…',generating:'COO thinking…',saving:'Saving plan…'}
-      const{schedule:s,error,proposed_tasks,task_migrations}=await api.schedule.generate(
+      const{schedule:s,error,proposed_tasks,task_migrations,keyWarning}=await api.schedule.generate(
         {roadmap:settings?.roadmap,localHour:now.getHours(),localDate,localTomorrow},
         (status)=>setCooLabel(statusLabels[status]||'Building your day…')
       )
+      if(keyWarning)showLlmWarning(keyWarning)
       if(error)throw new Error(error)
       if(s)setSchedule(s)
       // Merge proposed tasks into matrix (replace any previous coo-proposed for same date)
@@ -1075,7 +1077,7 @@ export default function App(){
 
   async function submitCheckin(){
     setCheckinLoading(true)
-    try{const{result}=await api.coo.checkin(checkin,checkinMsg);setCheckinResult(result);if(result?.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}catch{}
+    try{const r=await api.coo.checkin(checkin,checkinMsg);if(r.keyWarning)showLlmWarning(r.keyWarning);setCheckinResult(r.result);if(r.result?.reschedule_needed)timerRefs.current.push(setTimeout(generateSchedule,1500))}catch{}
     setCheckinLoading(false)
   }
 
@@ -1111,6 +1113,20 @@ export default function App(){
     if(undoInfo.prevTasks)setTasks(undoInfo.prevTasks)
     if(undoInfo.prevOrder)setTaskOrder(undoInfo.prevOrder)
     setUndoInfo(null)
+  }
+  function showLlmWarning(msg){
+    if(!msg)return
+    try{const silenced=JSON.parse(localStorage.getItem('silenced_llm_warnings')||'[]');if(silenced.some(s=>msg.includes(s)))return}catch{}
+    setLlmWarning(msg)
+  }
+  function silenceLlmWarning(){
+    if(!llmWarning)return
+    try{
+      const provider=llmWarning.includes('Claude')?'Claude':'Gemini'
+      const silenced=JSON.parse(localStorage.getItem('silenced_llm_warnings')||'[]')
+      if(!silenced.includes(provider))localStorage.setItem('silenced_llm_warnings',JSON.stringify([...silenced,provider]))
+    }catch{}
+    setLlmWarning(null)
   }
 
   // ── Schedule-quadrant action ─────────────────────────────────────────────────
@@ -2648,6 +2664,14 @@ export default function App(){
       <span style={{color:'rgba(255,255,255,.8)',fontFamily:'var(--m)',fontSize:12}}>{undoInfo.label}</span>
       <button onClick={handleUndo} style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.25)',color:'#fff',padding:'3px 11px',borderRadius:5,cursor:'pointer',fontFamily:'var(--m)',fontSize:12}}>↩ Undo</button>
       <button onClick={()=>setUndoInfo(null)} style={{background:'none',border:'none',color:'rgba(255,255,255,.5)',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>×</button>
+    </div>}
+
+    {/* LLM key warning banner — shown when a user key fails and Groq fallback was used */}
+    {llmWarning&&<div style={{position:'fixed',bottom:72,left:'50%',transform:'translateX(-50%)',zIndex:400,background:'rgba(120,60,0,.93)',backdropFilter:'blur(12px)',borderRadius:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,boxShadow:'0 4px 20px rgba(0,0,0,.32)',animation:'fadeUp .18s ease',maxWidth:'min(92vw,480px)',width:'100%'}}>
+      <span style={{fontSize:16,flexShrink:0}}>⚠</span>
+      <span style={{color:'rgba(255,230,180,.95)',fontFamily:'var(--m)',fontSize:11.5,flex:1,lineHeight:1.5}}>{llmWarning}</span>
+      <button onClick={silenceLlmWarning} title="Don't show this again" style={{background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',color:'rgba(255,230,180,.8)',padding:'3px 9px',borderRadius:5,cursor:'pointer',fontFamily:'var(--m)',fontSize:11,flexShrink:0,whiteSpace:'nowrap'}}>Silence</button>
+      <button onClick={()=>setLlmWarning(null)} style={{background:'none',border:'none',color:'rgba(255,230,180,.5)',cursor:'pointer',fontSize:16,padding:0,lineHeight:1,flexShrink:0}}>×</button>
     </div>}
 
     {/* TIER-UP JOURNAL MODAL */}

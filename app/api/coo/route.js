@@ -22,9 +22,11 @@ export async function POST(req) {
     supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', todayKey()).maybeSingle().then(r => r.data),
     supabaseAdmin.from('user_context').select('*').eq('user_id', userId).maybeSingle().then(r => r.data),
   ])
+  let keyWarning = null
   const llmKeys = {
     anthropicKey: userCtx?.anthropic_api_key || null,
     geminiKey: userCtx?.gemini_api_key || null,
+    onKeyWarning: (msg) => { keyWarning = msg },
   }
 
   const roadmap = userCtx?.roadmap || 'No roadmap set yet'
@@ -123,7 +125,7 @@ export async function POST(req) {
     }
   }
 
-  return Response.json({ result })
+  return Response.json({ result, keyWarning })
   } catch (e) {
     console.error('[/api/coo] unhandled error:', e)
     return Response.json({ error: e?.message || 'COO unavailable' }, { status: 500 })

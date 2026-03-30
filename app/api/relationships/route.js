@@ -51,9 +51,11 @@ export async function POST(req) {
   const contacts = cached?.contacts || []
   const overdueContacts = cached?.overdue || getOverdueContacts(contacts)
   const upcomingBirthdays = cached?.birthdays || getUpcomingBirthdays(contacts)
+  let keyWarning = null
   const llmKeys = {
     anthropicKey: userCtx?.anthropic_api_key || null,
     geminiKey: userCtx?.gemini_api_key || null,
+    onKeyWarning: (msg) => { keyWarning = msg },
   }
 
   const result = await generateRelationshipBrief({ contacts, overdueContacts, upcomingBirthdays, userMessage, weeklyCheckin: weekly || false, timezone: userCtx?.timezone, llmKeys })
@@ -63,5 +65,5 @@ export async function POST(req) {
     { onConflict: 'user_id,date' }
   )
 
-  return Response.json({ result })
+  return Response.json({ result, keyWarning })
 }

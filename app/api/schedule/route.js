@@ -83,9 +83,11 @@ export async function POST(req) {
         const vetoHistory = buildVetoHistory(recentScheds)
 
         const goals = userCtx?.goals || []
+        let keyWarning = null
         const llmKeys = {
           anthropicKey: userCtx?.anthropic_api_key || null,
           geminiKey: userCtx?.gemini_api_key || null,
+          onKeyWarning: (msg) => { keyWarning = msg },
         }
         // Cap agent contributions at 4s — a slow/missing API key must not hang the whole request
         const agentContributions = await Promise.race([
@@ -236,7 +238,7 @@ export async function POST(req) {
           }
         }
 
-        send({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [] })
+        send({ schedule: record, proposed_tasks: proposedTasks, task_migrations: plan.task_migrations || [], keyWarning })
       } catch (e) {
         console.error('schedule POST error:', e)
         send({ error: e?.message || 'Schedule generation failed' })
@@ -264,8 +266,20 @@ export async function PATCH(req) {
   const userId = session.user.email
 
   const schedDate = clientDate || activeScheduleDate()
-  const { data: existing } = await supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', schedDate).single()
+  const [{ data: existing }, { data: userCtxMin }] = await Promise.all([
+    supabaseAdmin.from('schedules').select('*').eq('user_id', userId).eq('date', schedDate).single(),
+    action === 'veto'
+      ? supabaseAdmin.from('user_context').select('gemini_api_key, anthropic_api_key').eq('user_id', userId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
   if (!existing) return Response.json({ error: 'No schedule' }, { status: 404 })
+
+  let patchKeyWarning = null
+  const llmKeys = {
+    anthropicKey: userCtxMin?.anthropic_api_key || null,
+    geminiKey: userCtxMin?.gemini_api_key || null,
+    onKeyWarning: (msg) => { patchKeyWarning = msg },
+  }
 
   const slots = [...existing.slots]
 
@@ -337,7 +351,7 @@ export async function PATCH(req) {
   if (action === 'veto') {
     const vi = slotIndex
     supabaseAdmin.from('tasks').select('*').eq('user_id', userId).eq('date', schedDate)
-      .then(r => assessVetoImpact({ vetoedSlot: slots[vi], remainingSlots: slots, tasks: r.data || [], llmKeys: {} }))
+      .then(r => assessVetoImpact({ vetoedSlot: slots[vi], remainingSlots: slots, tasks: r.data || [], llmKeys }))
       .then(impact => {
         if (!impact) return
         const updated = slots.map((s, i) => i === vi ? { ...s, impact: impact.impact, suggestion: impact.suggestion, severity: impact.severity } : s)
@@ -346,5 +360,5 @@ export async function PATCH(req) {
       .catch(() => {})
   }
 
-  return Response.json({ slots, coo_score: cooScore })
+  return Response.json({ slots, coo_score: cooScore, keyWarning: patchKeyWarning })
 }
