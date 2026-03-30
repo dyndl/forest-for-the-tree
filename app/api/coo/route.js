@@ -31,10 +31,10 @@ export async function POST(req) {
   let result
 
   if (type === 'midday' || type === 'afternoon') {
-    result = await generateCheckin({ type, tasks, schedule, userMessage, llmKeys })
+    result = await generateCheckin({ type, tasks, schedule, userMessage, timezone: userCtx?.timezone, llmKeys })
   } else if (type === 'evening') {
     const incompleteTasks = tasks.filter(t => !t.done && t.status !== 'wont_do')
-    result = await generateEveningRetro({ tasks, schedule, roadmap, incompleteTasks, llmKeys })
+    result = await generateEveningRetro({ tasks, schedule, roadmap, incompleteTasks, timezone: userCtx?.timezone, llmKeys })
 
     // Store retro
     await supabaseAdmin.from('retros').upsert(
@@ -64,7 +64,7 @@ export async function POST(req) {
   } else if (type === 'weekly') {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const { data: weekTasks } = await supabaseAdmin.from('tasks').select('*').eq('user_id', userId).gte('date', weekAgo)
-    result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap, llmKeys })
+    result = await generateWeeklyReview({ weekTasks: weekTasks || [], roadmap, timezone: userCtx?.timezone, llmKeys })
   } else if (type === 'weekly_feedback') {
     // User responded to weekly digest — update final_message + clear pending flag
     const { digestId, feedback } = body

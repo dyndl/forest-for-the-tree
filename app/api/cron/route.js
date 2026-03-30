@@ -230,7 +230,7 @@ async function runWeekly(userId) {
     anthropicKey: userCtx?.anthropic_api_key || null,
     geminiKey: userCtx?.gemini_api_key || null,
   }
-  const digest = await generateWeeklyReview({ weekTasks, roadmap: userCtx?.roadmap || '', llmKeys })
+  const digest = await generateWeeklyReview({ weekTasks, roadmap: userCtx?.roadmap || '', timezone: userCtx?.timezone, llmKeys })
   if (!digest) return { ok: false, error: 'digest generation failed' }
 
   // Monday of this week
@@ -317,7 +317,7 @@ async function runRelationships(userId) {
   }
   const result = await generateRelationshipBrief({
     contacts, overdueContacts: overdue, upcomingBirthdays: birthdays,
-    userMessage: 'Weekly Sunday review', weeklyCheckin: true, llmKeys,
+    userMessage: 'Weekly Sunday review', weeklyCheckin: true, timezone: userCtx?.timezone, llmKeys,
   })
 
   await supabaseAdmin.from('relationship_briefs').upsert(
