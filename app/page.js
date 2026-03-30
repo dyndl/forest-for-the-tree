@@ -1965,12 +1965,14 @@ export default function App(){
                   const t=tasks.find(x=>x.id===m.task_id)
                   if(!t)return null
                   const nd=new Date(m.new_date+'T12:00:00');const dl=nd.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
-                  return(<div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderTop:i>0?'1px solid rgba(184,92,0,.1)':'none'}}>
-                    <span style={{flex:1,fontSize:13,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</span>
-                    <span style={{fontFamily:'var(--m)',fontSize:11,color:'var(--txt3)',flexShrink:0}}>→ {dl}</span>
-                    <span style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',flexShrink:0,maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.reason}</span>
-                    <button onClick={async()=>{await api.tasks.update(m.task_id,{date:m.new_date});setTasks(ts=>ts.map(t=>t.id===m.task_id?{...t,date:m.new_date}:t));setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))}} style={{padding:'2px 8px',borderRadius:3,border:'1px solid rgba(15,110,86,.3)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer'}}>✓</button>
-                    <button onClick={()=>setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))} style={{padding:'2px 6px',borderRadius:3,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer'}}>✗</button>
+                  return(<div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderTop:i>0?'1px solid rgba(184,92,0,.12)':'none'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>
+                      {m.reason&&<div style={{fontFamily:'var(--m)',fontSize:10,color:'var(--txt3)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.reason}</div>}
+                    </div>
+                    <span style={{fontFamily:'var(--m)',fontSize:12,fontWeight:600,color:'var(--do)',flexShrink:0,background:'rgba(184,92,0,.12)',padding:'2px 8px',borderRadius:4,border:'1px solid rgba(184,92,0,.25)',whiteSpace:'nowrap'}}>→ {dl}</span>
+                    <button onClick={async()=>{await api.tasks.update(m.task_id,{date:m.new_date});setTasks(ts=>ts.map(t=>t.id===m.task_id?{...t,date:m.new_date}:t));setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))}} style={{padding:'3px 10px',borderRadius:4,border:'1px solid rgba(15,110,86,.35)',background:'rgba(15,110,86,.1)',color:'var(--ok)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',fontWeight:500,flexShrink:0}}>✓ Move</button>
+                    <button onClick={()=>setOverdueProposals(p=>p.filter(x=>x.task_id!==m.task_id))} style={{padding:'3px 8px',borderRadius:4,border:'1px solid var(--gb2)',background:'transparent',color:'var(--txt3)',fontFamily:'var(--m)',fontSize:11,cursor:'pointer',flexShrink:0}}>✗</button>
                   </div>)
                 })}
               </div>}
