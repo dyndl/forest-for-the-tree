@@ -36,6 +36,8 @@ const DEFAULTS = {
   looking_for_jobs: true,
   show_health_snapshot: false,
   health_baselines: {},
+  // daily_blocks: user-defined schedule constraints — [ { id, label, emoji, start, end, days, flexibility, category, note } ]
+  daily_blocks: [],
   // User-provided LLM keys — stored per user, never logged
   gemini_api_key: null,
   anthropic_api_key: null,

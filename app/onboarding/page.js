@@ -2,6 +2,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signOut } from 'next-auth/react'
+import DailyBlocksEditor from '@/components/DailyBlocksEditor'
 
 const STEPS = ['welcome', 'roadmap', 'areas', 'outline', 'schedule', 'oura', 'whisper', 'relationships', 'ai_connect', 'done']
 const ADDON_STEPS = { oura: 'oura', whisper: 'whisper' } // deepgram has no setup step — app holds the key
@@ -793,6 +794,21 @@ function ScheduleStep({ data, onChange, onNext, onBack }) {
         The more context the COO has, the better it plans.
       </p>
 
+      {/* Daily time blocks */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#182e22', marginBottom: 2 }}>Your daily rhythm</div>
+        <p style={{ fontSize: 11, color: '#7aaa8a', lineHeight: 1.5, marginBottom: 10 }}>
+          Pick a starting pattern — the COO will schedule tasks around these blocks.
+          Strict blocks are never interrupted; flexible ones are protected when possible;
+          aspiring ones are habits you're growing into. Fine-tune anytime in Settings.
+        </p>
+        <DailyBlocksEditor
+          blocks={data.daily_blocks || []}
+          onChange={v => onChange('daily_blocks', v)}
+          compact={true}
+        />
+      </div>
+
       {/* ADHD-aware toggle */}
       <div style={{
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
@@ -1397,6 +1413,7 @@ const DEFAULT_FORM = {
     birthday_alerts:         true,
   },
   life_areas:          [],
+  daily_blocks:        [],
   outline:             '',
   pending_agents:      [],
   relationship_seeds:  '',
@@ -1466,6 +1483,7 @@ function OnboardingPage() {
               outline:           settings.outline            || f.outline,
               life_areas:        settings.life_areas         || f.life_areas,
               notification_prefs:settings.notification_prefs || f.notification_prefs,
+              daily_blocks:      settings.daily_blocks       || f.daily_blocks,
               relationship_seeds:settings.relationship_seeds || f.relationship_seeds,
             }))
           }
@@ -1506,6 +1524,7 @@ function OnboardingPage() {
           outline:            data.outline,
           life_areas:         data.life_areas,
           notification_prefs: data.notification_prefs,
+          daily_blocks:       data.daily_blocks,
           relationship_seeds: data.relationship_seeds || '',
         }),
       })
@@ -1570,6 +1589,7 @@ function OnboardingPage() {
           outline:              formData.outline,
           notification_prefs:   formData.notification_prefs,
           life_areas:           formData.life_areas,
+          daily_blocks:         formData.daily_blocks,
           weekly_time_budget,
           relationship_seeds:   formData.relationship_seeds || '',
           background_proposals: payload.background_proposals || [],

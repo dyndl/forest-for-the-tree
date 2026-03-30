@@ -203,6 +203,10 @@ alter table user_context add column if not exists relationship_seeds text defaul
 -- Timezone: IANA timezone string (e.g. 'America/New_York') — detected client-side on mount
 alter table user_context add column if not exists timezone text default null;
 
+-- Daily time blocks: user-defined schedule constraints (sleep, work, meals, routines, play)
+-- Each block: { id, label, emoji, start "HH:MM", end "HH:MM", days ["mon"..], flexibility "strict|flexible|aspiring", category, note }
+alter table user_context add column if not exists daily_blocks jsonb default '[]'::jsonb;
+
 -- MEDIA UPLOADS (voice memos, images, files)
 create table if not exists media_uploads (
   id text primary key,

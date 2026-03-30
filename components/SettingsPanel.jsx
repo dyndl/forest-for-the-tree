@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
+import DailyBlocksEditor from './DailyBlocksEditor'
 
 const mono = { fontFamily: 'JetBrains Mono, monospace' }
 
@@ -227,6 +228,19 @@ export default function SettingsPanel() {
         </div>
         <Toggle label="ADHD-aware mode" value={!!settings.adhd_aware} onChange={v => set('adhd_aware', v)} />
         <p style={{ fontSize: 10.5, color: '#7aaa8a', marginTop: 6, lineHeight: 1.5 }}>Breaks tasks into ≤30 min chunks, protects focus context, names ADHD patterns explicitly.</p>
+      </Section>
+
+      <Section title="Daily time blocks">
+        <p style={{ fontSize: 10.5, color: '#7aaa8a', marginBottom: 12, lineHeight: 1.5 }}>
+          Define when you sleep, work, eat, and recharge. The COO uses these to schedule tasks intelligently —{' '}
+          <span style={{ ...mono, color: '#8a2828' }}>strict</span> blocks are never interrupted,{' '}
+          <span style={{ ...mono, color: '#1a5a3c' }}>flexible</span> ones are protected when possible,{' '}
+          <span style={{ ...mono, color: '#7a5a00' }}>aspiring</span> ones are habits you're growing into.
+        </p>
+        <DailyBlocksEditor
+          blocks={settings.daily_blocks || []}
+          onChange={v => set('daily_blocks', v)}
+        />
       </Section>
 
       <Section title="Financial goals">
